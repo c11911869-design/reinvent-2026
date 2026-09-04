@@ -497,6 +497,14 @@ let attendees = [];            // [{id,name,plan:[],updated}]
 let notesByCode = new Map();   // code -> [{id,by,name,text,updated}]
 let dbState = "connecting";    // connecting | ready | unavailable
 let dbError = "";              // last write error code, surfaced in the UI
+const explain = {
+  not_persisted: "The write was accepted locally but never reached the shared store.",
+  readback_failed: "The write was sent but could not be read back.",
+  invalid_argument: "The shared store refused the write as invalid.",
+  not_granted: "This view was not granted access to the shared store.",
+  revoked: "Access to the shared store was withdrawn while the page was open.",
+};
+const explainDb = c => explain[c] || "The shared store rejected the last write.";
 
 async function bootCaps() {
   if (typeof window.claude?.use !== "function") { dbState = "unavailable"; render(); return; }
@@ -521,11 +529,20 @@ function planDoc() {
           topics: profile?.tp || [], areas: profile?.ai || []};
 }
 
-/* Write my plan to the shared store. Resolves to true/false; never swallows. */
+/* Write my plan to the shared store, then READ IT BACK before claiming success.
+   set() can resolve from the local cache before the server has confirmed, so a
+   resolved promise is not evidence the row persisted — only a read-back is. */
 async function pushNow() {
   if (!DB || !me?.id) return false;
-  try { await DB.doc("attendees/" + me.id).set(planDoc()); dbError = ""; return true; }
-  catch (err) { dbError = err?.code || "error"; render(); return false; }
+  const ref = DB.doc("attendees/" + me.id);
+  try {
+    await ref.set(planDoc());
+  } catch (err) { dbError = err?.code || "error"; render(); return false; }
+  try {
+    const snap = await ref.get();
+    if (!snap.exists) { dbError = "not_persisted"; render(); return false; }
+  } catch (err) { dbError = err?.code || "readback_failed"; render(); return false; }
+  dbError = ""; return true;
 }
 
 /* Debounced mirror, for ordinary plan edits. */
@@ -953,10 +970,10 @@ function pendingPanel() {
 /* ---------- people ---------- */
 function renderPeople() {
   const status =
-    dbError ? `<span class="msg err">Shared store rejected the last write (${esc(dbError)}). Your plan is still saved locally.</span>`
+    dbError ? `<span class="msg err">${esc(explainDb(dbError))} (${esc(dbError)}) Your plan is still saved locally — use <b>Share</b> to compare by code.</span>`
     : dbState === "connecting" ? `<span class="msg">Connecting to the shared store…</span>`
     : dbState === "unavailable" ? `<span class="msg">Shared mode is unavailable in this view — your plan stays local.</span>`
-    : me?.name ? `<span class="msg ok">Joined as ${esc(me.name)} — your plan syncs to everyone with this link.</span>`
+    : me?.name ? `<span class="msg ok">Joined as ${esc(me.name)} — write confirmed. The shared store currently lists ${attendees.length} ${attendees.length===1?"person":"people"}.</span>`
     : `<span class="msg">Connected. Add a name to share your plan.</span>`;
   const nameBar = `<div class="namebar">
     <label class="field" style="flex:1 1 200px"><span>Your name on this page</span>
@@ -1222,7 +1239,7 @@ async function joinAs(raw) {
   render();
   const m2 = $("#nameMsg");
   if (m2 && !ok && dbState === "ready") {
-    m2.textContent = `Could not reach the shared store (${esc(dbError || "error")}). Your plan is saved locally.`;
+    m2.textContent = `${explainDb(dbError)} (${dbError || "error"}) Your plan is saved locally.`;
     m2.className = "msg err";
   }
 }
