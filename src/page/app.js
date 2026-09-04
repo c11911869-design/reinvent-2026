@@ -540,14 +540,20 @@ function renderPeople() {
     : dbState === "unavailable" ? `<span class="msg">Shared mode is unavailable in this view — your plan stays local.</span>`
     : me?.name ? `<span class="msg ok">Joined as ${esc(me.name)} — write confirmed. The shared store currently lists ${attendees.length} ${attendees.length===1?"person":"people"}.</span>`
     : `<span class="msg">Connected. Add a name to share your plan.</span>`;
+  const diag = `dbState=${dbState} err=${dbError||"none"} attendees=${attendees.length} `
+             + `me=${me?.id||"unset"} sample=${SAMPLE?"y":"n"} dl=${DL?"y":"n"} `
+             + `use=${typeof window.claude?.use === "function" ? "y":"n"}`;
+  const diagBar = `<div class="namebar" style="border-left-color:var(--faint)">
+      <span class="msg" style="flex:1 1 auto;word-break:break-all">Diagnostics: ${esc(diag)}</span>
+      <button class="btn ghost" id="copyDiag" type="button">Copy</button></div>`;
   const nameBar = `<div class="namebar">
     <label class="field" style="flex:1 1 200px"><span>Your name on this page</span>
       <input id="myName" maxlength="40" placeholder="e.g. Caleb" value="${esc(me?.name||"")}"></label>
     <button class="btn" id="saveName" type="button">${me?.name ? "Update" : "Join"}</button>
     <span class="msg" id="nameMsg">${status}</span>
   </div>`;
-  if (dbState !== "ready") return nameBar + `<p class="empty">Live sharing needs the published page. Use <b>Share</b> to exchange plan codes instead.</p>`;
-  if (!attendees.length) return nameBar + `<p class="empty">No one has joined yet. Add your name above, then send whoever you're going with this page's link.</p>`;
+  if (dbState !== "ready") return nameBar + diagBar + `<p class="empty">Live sharing needs the published page. Use <b>Share</b> to exchange plan codes instead.</p>`;
+  if (!attendees.length) return nameBar + diagBar + `<p class="empty">No one has joined yet. Add your name above, then send whoever you're going with this page's link.</p>`;
 
   const mineSet = plan;
   const cards = attendees.map(a => {
@@ -573,7 +579,7 @@ function renderPeople() {
           <span class="fit">${n} going</span></div>
         <h3>${esc(r.t)}</h3></button>`; }).join("");
 
-  return nameBar + `<section class="sect" style="--lc:var(--accent)">
+  return nameBar + diagBar + `<section class="sect" style="--lc:var(--accent)">
     <div class="sect-head"><h2>Who's going</h2><span class="n">${attendees.length}</span></div>
     <p class="sect-desc">Everyone who has opened this page and added a name. Plans sync live. Names are self-declared, not verified, and every plan and note here is visible to anyone who can open this page.</p>
     <div class="people">${cards}</div></section>
@@ -784,6 +790,12 @@ out.addEventListener("click", async e => {
   if (tab) { state.day = tab.dataset.d; render(); return; }
   if (e.target.closest("#startWiz")) { openWizard(false); return; }
   if (e.target.closest("#saveName")) { await joinAs($("#myName")?.value); return; }
+  if (e.target.closest("#copyDiag")) {
+    const t = e.target.closest(".namebar").querySelector(".msg").textContent;
+    try { await navigator.clipboard.writeText(t); e.target.textContent = "Copied"; }
+    catch (err) { e.target.textContent = "Select and copy"; }
+    return;
+  }
   const t = e.target.closest(".tile, .card");
   if (t?.dataset.code) {
     if (e.target.closest(".plan")) {
