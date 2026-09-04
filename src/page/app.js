@@ -60,34 +60,45 @@ const state = {q:"", tracks:new Set(), f:new Set(), view:"foryou", day:null};
 let DB = null, SAMPLE = null, DL = null;
 let attendees = [];            // [{id,name,plan:[],updated}]
 let notesByCode = new Map();   // code -> [{id,by,name,text,updated}]
+let dbState = "connecting";    // connecting | ready | unavailable
+let dbError = "";              // last write error code, surfaced in the UI
 
 async function bootCaps() {
-  if (typeof window.claude?.use !== "function") return;
+  if (typeof window.claude?.use !== "function") { dbState = "unavailable"; render(); return; }
   try { DB = await window.claude.use("db"); } catch(e) { DB = null; }
   try { SAMPLE = await window.claude.use("sample"); } catch(e) { SAMPLE = null; }
   try { DL = await window.claude.use("downloads"); } catch(e) { DL = null; }
+  dbState = DB ? "ready" : "unavailable";
   if (DB) {
     try {
       DB.collection("attendees").onSnapshot(
         snap => { attendees = snap.docs.map(d => ({id:d.id, ...d.data()})); render(); },
-        () => {});
-    } catch(e) {}
-    pushPlan();
+        err => { dbError = err?.code || "error"; render(); });
+    } catch(e) { dbError = e?.code || "error"; }
+    // The name may have been set before db resolved — push it now.
+    if (me?.id) pushNow();
   }
   render();
 }
 
-/* Mirror my plan into the shared store, debounced. */
+function planDoc() {
+  return {name: me.name, plan: [...plan], updated: new Date().toISOString(),
+          topics: profile?.tp || [], areas: profile?.ai || []};
+}
+
+/* Write my plan to the shared store. Resolves to true/false; never swallows. */
+async function pushNow() {
+  if (!DB || !me?.id) return false;
+  try { await DB.doc("attendees/" + me.id).set(planDoc()); dbError = ""; return true; }
+  catch (err) { dbError = err?.code || "error"; render(); return false; }
+}
+
+/* Debounced mirror, for ordinary plan edits. */
 let pushT = null;
 function pushPlan() {
   if (!DB || !me?.id) return;
   clearTimeout(pushT);
-  pushT = setTimeout(() => {
-    DB.doc("attendees/" + me.id).set({
-      name: me.name, plan: [...plan], updated: new Date().toISOString(),
-      topics: profile?.tp || [], areas: profile?.ai || [],
-    }).catch(() => {});
-  }, 600);
+  pushT = setTimeout(pushNow, 600);
 }
 
 /* ===================================================================
@@ -506,13 +517,19 @@ function pendingPanel() {
 
 /* ---------- people ---------- */
 function renderPeople() {
+  const status =
+    dbError ? `<span class="msg err">Shared store rejected the last write (${esc(dbError)}). Your plan is still saved locally.</span>`
+    : dbState === "connecting" ? `<span class="msg">Connecting to the shared store…</span>`
+    : dbState === "unavailable" ? `<span class="msg">Shared mode is unavailable in this view — your plan stays local.</span>`
+    : me?.name ? `<span class="msg ok">Joined as ${esc(me.name)} — your plan syncs to everyone with this link.</span>`
+    : `<span class="msg">Connected. Add a name to share your plan.</span>`;
   const nameBar = `<div class="namebar">
     <label class="field" style="flex:1 1 200px"><span>Your name on this page</span>
       <input id="myName" maxlength="40" placeholder="e.g. Caleb" value="${esc(me?.name||"")}"></label>
     <button class="btn" id="saveName" type="button">${me?.name ? "Update" : "Join"}</button>
-    <span class="msg" id="nameMsg">${DB ? "" : "Shared mode is unavailable in this view — your plan stays local."}</span>
+    <span class="msg" id="nameMsg">${status}</span>
   </div>`;
-  if (!DB) return nameBar + `<p class="empty">Live sharing needs the published page. Use <b>Share</b> to exchange plan codes instead.</p>`;
+  if (dbState !== "ready") return nameBar + `<p class="empty">Live sharing needs the published page. Use <b>Share</b> to exchange plan codes instead.</p>`;
   if (!attendees.length) return nameBar + `<p class="empty">No one has joined yet. Add your name above, then send whoever you're going with this page's link.</p>`;
 
   const mineSet = plan;
@@ -736,7 +753,7 @@ function render() {
 }
 
 /* ---------- events ---------- */
-out.addEventListener("click", e => {
+out.addEventListener("click", async e => {
   const open = e.target.closest("[data-open]");
   if (open) { openDrawer(open.dataset.open); return; }
   const planBtn = e.target.closest("button.plan[data-code]");
@@ -749,12 +766,7 @@ out.addEventListener("click", e => {
   const tab = e.target.closest(".daytab");
   if (tab) { state.day = tab.dataset.d; render(); return; }
   if (e.target.closest("#startWiz")) { openWizard(false); return; }
-  if (e.target.closest("#saveName")) {
-    const v = ($("#myName")?.value || "").trim().slice(0,40);
-    if (!v) { $("#nameMsg").textContent = "Enter a name first."; return; }
-    me = {id: me?.id || ("u" + Math.random().toString(36).slice(2,10)), name: v};
-    lsSet(K.me, me); pushPlan(); render(); return;
-  }
+  if (e.target.closest("#saveName")) { await joinAs($("#myName")?.value); return; }
   const t = e.target.closest(".tile, .card");
   if (t?.dataset.code) {
     if (e.target.closest(".plan")) {
@@ -762,6 +774,28 @@ out.addEventListener("click", e => {
       plan.has(c) ? plan.delete(c) : plan.add(c); savePlan(); render();
     } else openDrawer(t.dataset.code);
   }
+});
+
+async function joinAs(raw) {
+  const v = (raw || "").trim().slice(0, 40);
+  const msg = $("#nameMsg");
+  if (!v) { if (msg) { msg.textContent = "Enter a name first."; msg.className = "msg err"; } return; }
+  me = {id: me?.id || ("u" + Math.random().toString(36).slice(2,10)), name: v};
+  lsSet(K.me, me);
+  if (msg) { msg.textContent = "Saving…"; msg.className = "msg"; }
+  const ok = await pushNow();
+  render();
+  const m2 = $("#nameMsg");
+  if (m2 && !ok && dbState === "ready") {
+    m2.textContent = `Could not reach the shared store (${esc(dbError || "error")}). Your plan is saved locally.`;
+    m2.className = "msg err";
+  }
+}
+
+/* Enter in the name field submits — typing a name and hitting return is the
+   obvious gesture, and silently doing nothing looks like a broken page. */
+out.addEventListener("keydown", e => {
+  if (e.target.id === "myName" && e.key === "Enter") { e.preventDefault(); joinAs(e.target.value); }
 });
 
 $("#scrim").addEventListener("click", closeDrawer);
