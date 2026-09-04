@@ -551,15 +551,52 @@ function scoreOf(r) {
   return {score:s, why:[...new Set(why)].slice(0,3)};
 }
 
-let ranked = [];
-const STRONG = 6;   // two facet hits, or one plus a curated pick
+/* The most a session can score against THIS profile. Only fields the profile
+   actually populates can contribute, so a sparse profile has a low ceiling. */
+function profileCeiling() {
+  if (!profile) return 0;
+  return (profile.tp?.length ? W.tp * 2 : 0)
+       + (profile.ai?.length ? W.ai * 2 : 0)
+       + (profile.ro?.length ? W.ro * 2 : 0)
+       + (profile.in?.length ? W.in * 2 : 0)
+       + (profile.levels?.length ? W.level : 0)
+       + (profile.fmt?.length ? W.fmt : 0)
+       + (profile.hands ? W.hands : 0);
+}
+
+let ranked = [], cutoff = 0, ceiling = 0, positives = 0;
+const MIN_SIGNAL = 6;      // one weak tag hit never counts as a match
+const SHARE = 0.10;        // keep at most this share of the catalog
+const FRACTION = 0.35;     // ...and at least this fraction of what's achievable
+
+/* Adaptive bar. Scores inflate two ways as a profile broadens: more fields
+   populated raises every score, and more options inside a field makes the
+   two-hit cap easier to reach. A fixed threshold misses both, so the bar is
+   the strictest of three rules — an absolute floor, a share of the profile's
+   own ceiling, and a share of the catalog. */
 function rank() {
+  ceiling = profileCeiling();
   const all = CATALOG.map(r => ({r, ...scoreOf(r)}))
     .filter(x => x.score > 0)
     .sort((a,b) => b.score - a.score || (a.r.pick?1:0) - (b.r.pick?1:0) || a.r.c.localeCompare(b.r.c));
-  const strong = all.filter(x => x.score >= STRONG);
-  // If the profile is narrow, widen rather than show an empty page.
-  ranked = strong.length >= 24 ? strong : all.slice(0, 40);
+  positives = all.length;
+
+  const targetN = Math.min(180, Math.max(24, Math.round(CATALOG.length * SHARE)));
+  const atTarget = all.length > targetN ? all[targetN - 1].score : 0;
+  cutoff = Math.max(MIN_SIGNAL, Math.ceil(ceiling * FRACTION), atTarget);
+
+  // Filter by score, not by index, so a run of tied scores is never cut in half.
+  // Scores are coarse integers, so the group sitting exactly on the bar can be
+  // large; when keeping it overshoots the target badly, step the bar up a point
+  // rather than cut equivalent sessions apart arbitrarily.
+  ranked = all.filter(x => x.score >= cutoff);
+  const floorN = Math.max(24, Math.round(targetN * 0.4));
+  while (ranked.length > targetN * 1.6) {
+    const tighter = all.filter(x => x.score >= cutoff + 1);
+    if (tighter.length < floorN) break;
+    cutoff += 1; ranked = tighter;
+  }
+  if (ranked.length < 12) { ranked = all.slice(0, Math.min(24, all.length)); cutoff = 0; }
 }
 
 /* ===================================================================
@@ -765,8 +802,14 @@ function renderForYou() {
   const inPlan = vis.filter(x => plan.has(x.r.c)).length;
   return `<section class="sect" style="--lc:var(--accent)">
     <div class="sect-head"><h2>Suggested for you</h2>
-      <span class="n">${vis.length} strong match${vis.length===1?"":"es"} &middot; ${inPlan} planned</span></div>
-    <p class="sect-desc">Ranked against your interests across all ${CATALOG.length.toLocaleString()} published sessions, keeping only those with a real signal — a single broad tag like Artificial Intelligence covers half the catalog, so one match alone is not enough. Curated picks are weighted up and carry my commentary; sponsor sessions are weighted down.${vis.length>60?" Showing the top 60." : ""}</p>
+      <span class="n">${vis.length} match${vis.length===1?"":"es"} &middot; ${inPlan} planned</span></div>
+    <p class="sect-desc">${
+      !ceiling ? `You haven't picked any interests yet, so this is the curated core rather than a ranking — open <b>Interests</b> to tune it to your work.`
+      : `Ranked against your interests across all ${CATALOG.length.toLocaleString()} published sessions. `}${
+      !ceiling ? ``
+      : !cutoff ? `Your profile is narrow, so this is simply the best-scoring ${ranked.length} rather than a fixed bar. Add interests to sharpen it.`
+      : `The bar is <b>${cutoff} points of a possible ${ceiling}</b>, and it rises automatically as you pick more interests — so widening your profile surfaces better matches rather than simply more of them. ${positives.toLocaleString()} sessions score above zero; these clear the bar.`
+    } Curated picks are weighted up and carry my commentary; sponsor sessions are weighted down.${vis.length>60 ? " Showing the top 60." : ""}</p>
     <div class="tiles">${top.map(tile).join("")}</div></section>`;
 }
 
