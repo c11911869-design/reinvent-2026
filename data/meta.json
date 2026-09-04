@@ -1,0 +1,422 @@
+{
+ "pulled": "2026-09-03",
+ "catalogTotal": 1495,
+ "sessions": 1495,
+ "picks": 97,
+ "scheduled": 0,
+ "days": [],
+ "facets": {
+  "tp": [
+   [
+    "Artificial Intelligence",
+    743
+   ],
+   [
+    "Security & Identity",
+    223
+   ],
+   [
+    "Architecture",
+    177
+   ],
+   [
+    "Cloud Operations",
+    168
+   ],
+   [
+    "Migration & Modernization",
+    161
+   ],
+   [
+    "Developer Tools",
+    135
+   ],
+   [
+    "Business Agents",
+    123
+   ],
+   [
+    "Analytics",
+    111
+   ],
+   [
+    "Compute",
+    110
+   ],
+   [
+    "Industry Solutions",
+    105
+   ],
+   [
+    "Databases",
+    99
+   ],
+   [
+    "Serverless",
+    88
+   ],
+   [
+    "Storage",
+    81
+   ],
+   [
+    "Containers",
+    81
+   ],
+   [
+    "Application Integration",
+    66
+   ],
+   [
+    "Networking & Content Delivery",
+    61
+   ],
+   [
+    "Hybrid Cloud & Multicloud",
+    60
+   ],
+   [
+    "Open Source",
+    27
+   ]
+  ],
+  "ai": [
+   [
+    "Agentic AI",
+    644
+   ],
+   [
+    "Generative AI",
+    239
+   ],
+   [
+    "Innovation & Transformation",
+    204
+   ],
+   [
+    "Cost Optimization",
+    167
+   ],
+   [
+    "DevOps",
+    147
+   ],
+   [
+    "Automation",
+    137
+   ],
+   [
+    "Monitoring & Observability",
+    106
+   ],
+   [
+    "Resilience",
+    89
+   ],
+   [
+    "Global Infrastructure",
+    67
+   ],
+   [
+    "Machine Learning",
+    62
+   ],
+   [
+    "Governance, Risk & Compliance",
+    61
+   ],
+   [
+    "Lambda-Based Applications",
+    55
+   ],
+   [
+    "Application Security",
+    54
+   ],
+   [
+    "Data Protection",
+    49
+   ],
+   [
+    "Training & Certification",
+    48
+   ],
+   [
+    "Event-Driven Architecture",
+    46
+   ],
+   [
+    "Network & Infrastructure Security",
+    44
+   ],
+   [
+    "Well-Architected Framework",
+    43
+   ],
+   [
+    "Management & Governance",
+    42
+   ],
+   [
+    "Kubernetes",
+    41
+   ],
+   [
+    "Responsible AI",
+    38
+   ],
+   [
+    "DevSecOps",
+    37
+   ],
+   [
+    "Identity & Access Management",
+    32
+   ],
+   [
+    "Business Intelligence",
+    31
+   ],
+   [
+    "Edge Computing",
+    30
+   ],
+   [
+    "Customer Enablement",
+    30
+   ],
+   [
+    "Disaster Response & Recovery",
+    27
+   ],
+   [
+    "Threat Detection & Incident Response",
+    25
+   ],
+   [
+    "Open Data",
+    23
+   ],
+   [
+    "SaaS",
+    20
+   ],
+   [
+    "VMware",
+    20
+   ],
+   [
+    "Microsoft & .NET",
+    19
+   ],
+   [
+    "Tech for Impact",
+    17
+   ],
+   [
+    "Front-End Web & Mobile",
+    17
+   ],
+   [
+    "Learning from Amazon",
+    17
+   ],
+   [
+    "Culture of Security",
+    17
+   ],
+   [
+    "SAP",
+    14
+   ],
+   [
+    "Threat Intelligence",
+    12
+   ],
+   [
+    "Digital Sovereignty",
+    11
+   ],
+   [
+    "Workforce Development",
+    11
+   ],
+   [
+    "Zero Trust",
+    10
+   ],
+   [
+    "Robotics",
+    10
+   ],
+   [
+    "Internet of Things",
+    9
+   ],
+   [
+    "Oracle",
+    8
+   ],
+   [
+    "Sustainability",
+    7
+   ],
+   [
+    "Quantum Technologies",
+    7
+   ],
+   [
+    "Blockchain",
+    5
+   ],
+   [
+    "Cryptography and Post-Quantum",
+    5
+   ],
+   [
+    "Inclusion",
+    1
+   ],
+   [
+    "Privacy",
+    1
+   ]
+  ],
+  "ro": [
+   [
+    "Solution / Systems Architect",
+    697
+   ],
+   [
+    "Developer / Engineer",
+    690
+   ],
+   [
+    "IT Professional / Technical Manager",
+    345
+   ],
+   [
+    "DevOps Engineer",
+    326
+   ],
+   [
+    "IT Executive",
+    219
+   ],
+   [
+    "Business Executive",
+    186
+   ],
+   [
+    "Data Engineer",
+    111
+   ],
+   [
+    "Cloud Security Specialist",
+    111
+   ],
+   [
+    "IT Administrator",
+    80
+   ],
+   [
+    "Academic / Researcher",
+    70
+   ],
+   [
+    "Data Scientist",
+    64
+   ],
+   [
+    "System Administrator",
+    64
+   ],
+   [
+    "Advisor / Consultant",
+    37
+   ],
+   [
+    "Tech Explorer",
+    27
+   ],
+   [
+    "Sales / Marketing",
+    26
+   ],
+   [
+    "Entrepreneur (Founder/Co-Founder)",
+    23
+   ],
+   [
+    "Venture Capitalist",
+    2
+   ],
+   [
+    "Student",
+    1
+   ]
+  ],
+  "in": [
+   [
+    "Financial Services",
+    38
+   ],
+   [
+    "Media & Entertainment",
+    18
+   ],
+   [
+    "Government",
+    17
+   ],
+   [
+    "Retail & Consumer Goods",
+    12
+   ],
+   [
+    "Healthcare & Life Sciences",
+    11
+   ],
+   [
+    "Telecommunications",
+    8
+   ],
+   [
+    "Automotive",
+    8
+   ],
+   [
+    "Games",
+    8
+   ],
+   [
+    "Education",
+    7
+   ],
+   [
+    "Manufacturing & Industrial",
+    7
+   ],
+   [
+    "Advertising & Marketing",
+    5
+   ],
+   [
+    "Energy & Utilities",
+    4
+   ],
+   [
+    "Sports",
+    4
+   ],
+   [
+    "Nonprofit",
+    1
+   ],
+   [
+    "Travel & Hospitality",
+    1
+   ]
+  ]
+ }
+}

@@ -1,0 +1,67 @@
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Session detail" hidden></aside>
+<div id="wizmount"></div>
+
+<header class="mast"><div class="wrap mast-in">
+  <div>
+    <p class="eyebrow">AWS re:Invent 2026 &middot; Nov 30 – Dec 4 &middot; Las Vegas</p>
+    <h1>Mission Track</h1>
+    <p class="sub" id="sub">A session planner built on the live re:Invent catalog — tuned to what you actually work on, and shared with whoever you're going with.</p>
+  </div>
+  <div class="tally" id="tally"></div>
+</div></header>
+
+<div class="rail"><div class="wrap rail-in">
+  <div class="vtog" role="group" aria-label="View">
+    <button data-v="foryou" aria-pressed="true">For you</button>
+    <button data-v="tracks" aria-pressed="false">Curated</button>
+    <button data-v="days" aria-pressed="false">Days</button>
+    <button data-v="people" aria-pressed="false">People</button>
+  </div>
+  <label class="search">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+    <input id="q" type="search" placeholder="Search sessions…" data-ph="Search all {n} sessions…" aria-label="Search sessions">
+  </label>
+  <div class="chips" id="trackChips" role="group" aria-label="Filter by track"></div>
+  <div class="chips" id="miscChips" role="group" aria-label="Filters">
+    <button class="chip" data-f="core" aria-pressed="false">Core only</button>
+    <button class="chip" data-f="hands" aria-pressed="false">Hands-on</button>
+    <button class="chip" data-f="deep" aria-pressed="false">400/500</button>
+    <button class="chip" data-f="plan" aria-pressed="false">My plan</button>
+  </div>
+  <div class="chips" id="cmpChips" role="group" aria-label="Comparison filters"></div>
+  <span class="count" id="count"></span>
+  <button class="reset" id="prefs" type="button">Interests</button>
+  <button class="reset" id="share" type="button">Share</button>
+  <button class="reset" id="reset" type="button">Clear</button>
+</div></div>
+
+<main class="wrap">
+  <div id="sharepanel" hidden></div>
+  <div id="cmpbar"></div>
+  <div id="out"></div>
+</main>
+
+<footer><div class="wrap">
+  <div class="fgrid">
+    <div>
+      <h3>How to read a code</h3>
+      <p><b>IND397</b> — letters are the track (IND public sector, AIM AI/ML, CMP compute, ANT analytics, DVT dev tools, INV innovation talks), the first digit is depth: 100 foundational through 500 distinguished.</p>
+    </div>
+    <div>
+      <h3>Format, and why it matters</h3>
+      <ul>
+        <li><b>Chalk talk</b> — whiteboard, 50–100 seats, they solve your architecture live. Best value per hour, hardest to get into.</li>
+        <li><b>Builders' / Code talk</b> — small, hands on keyboard.</li>
+        <li><b>Workshop</b> — two hours, laptop required, you leave with running code.</li>
+        <li><b>Breakout</b> — recorded and posted afterward. Deprioritize in person.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Booking</h3>
+      <p>Reserved seating opens in the fall; roughly 75% of seats go to advance reservations, the rest to a walk-up line. Chalk talks, builders' sessions and workshops are capacity-capped and go first.</p>
+      <p><a href="https://registration.awsevents.com/flow/awsevents/reinvent2026/eventcatalog/page/eventcatalog">Official catalog →</a></p>
+    </div>
+  </div>
+  <p class="fnote" id="fnote"></p>
+</div></footer>

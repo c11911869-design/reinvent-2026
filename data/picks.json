@@ -1,0 +1,584 @@
+[
+{
+"code": "AIM342",
+"track": "mlops",
+"tier": 1,
+"note": "Reference architecture for a multi-account, environment-isolated ML platform with registry-driven promotion and human-in-the-loop sign-off, extended to LLM adapter versioning. Built for regulated industries."
+},
+{
+"code": "AIM344",
+"track": "train",
+"tier": 1,
+"note": "Diagnosing GPU cluster failures that single-node debugging never teaches — NCCL timeouts that are really storage, DataLoader forks hanging collectives, GPUs that pass health checks and corrupt results. You leave with a failure-signature runbook."
+},
+{
+"code": "AIM347",
+"track": "train",
+"tier": 1,
+"note": "The best pure-craft session in the catalog for your role: profile kernels, tune collectives, read EFA and Lustre counters, build the dashboards yourself, and leave with a goodput methodology. Full-day-caliber depth."
+},
+{
+"code": "AIM351",
+"track": "rigor",
+"tier": 1,
+"note": "Build a working continuous evaluation pipeline: evaluation datasets, LLM-as-judge plus programmatic scoring, performance tracking over time, alerts on quality regressions. You leave with something you can adapt Monday."
+},
+{
+"code": "AIM362",
+"track": "train",
+"tier": 1,
+"note": "A live decision framework for SFT vs DPO vs RLAIF vs RLVR vs multi-turn RL, mapped onto SageMaker Serverless, Training Jobs, HyperPod, and Bedrock Custom Model Import. Bring a real use case; they place it on the map."
+},
+{
+"code": "AIM408",
+"track": "mlops",
+"tier": 1,
+"note": "The full governed path: managed MLflow, SageMaker Pipelines with lineage, Model Registry with model cards and approval gates, CI/CD promotion, drift monitoring. Approval gates and lineage are exactly what an ATO package asks for."
+},
+{
+"code": "AIM413",
+"track": "physical",
+"tier": 1,
+"note": "The synthetic-data flywheel for robotics and AV: generate rare edge cases, post-train policies, evaluate, repeat, on HyperPod with EKS and heterogeneous GPU pools. This is the robotics-plus-ML-infra intersection you care about."
+},
+{
+"code": "AIM449",
+"track": "physical",
+"tier": 1,
+"note": "Strands Robots SDK: one Robot() call gives an agent hands, MuJoCo by default and real hardware with a parameter change. Covers perception, VLA policies (GR00T, Cosmos 3, LeRobot), edge-to-cloud split, fleet mesh, and sim-to-real."
+},
+{
+"code": "ANT311",
+"track": "data",
+"tier": 1,
+"note": "Agents fire hundreds of sub-queries per task and cascade retrieval failures into hallucinations. What breaks in traditional search at agent scale and how OpenSearch addresses it."
+},
+{
+"code": "ANT336",
+"track": "data",
+"tier": 1,
+"note": "Building data products good enough for agents to consume. The upstream work that determines whether any of your downstream agent work succeeds."
+},
+{
+"code": "CMP357",
+"track": "hpc",
+"tier": 1,
+"note": "A decision framework for choosing compute across HPC and AI at scale by price and timing. The session that saves you the most money per minute spent in it."
+},
+{
+"code": "CMP406",
+"track": "hpc",
+"tier": 1,
+"note": "Hands-on build of production clusters with AWS Parallel Computing Service — job submission, resource optimization, the managed replacement for hand-rolled ParallelCluster."
+},
+{
+"code": "CMP407",
+"track": "physical",
+"tier": 1,
+"note": "Whiteboards the whole physical-AI pipeline and compares EKS vs Batch vs ParallelCluster across simulation, training, evaluation, and edge deployment, with Capacity Blocks and Spot for cost. They solve attendee architectures live — bring yours."
+},
+{
+"code": "DVT339",
+"track": "build",
+"tier": 1,
+"note": "What power users actually do to keep multi-agent orchestration from going brittle as context fills and the agent loses its plan. Bring your own edge cases."
+},
+{
+"code": "DVT415",
+"track": "build",
+"tier": 1,
+"note": "Reusable skills that encode team know-how, custom agents for specific jobs, and steering files that carry conventions across sessions. Demoed in Kiro but the principles transfer to any agentic coding tool."
+},
+{
+"code": "IND395",
+"track": "mission",
+"tier": 1,
+"note": "Neurosymbolic AI replacing Drools eligibility engines for SNAP/Medicaid — LLM ingests policy, formal logic verifies it, decisions stay deterministic and auditable. This is the honest answer to 'we can't ship a hallucinating model.'"
+},
+{
+"code": "IND396",
+"track": "mission",
+"tier": 1,
+"note": "IRS replaced a sub-10%-accuracy rules engine with an agentic system on GovCloud and went from 10+ weeks to one day. Architecture plus the compliance journey, told by the agency."
+},
+{
+"code": "IND397",
+"track": "mission",
+"tier": 1,
+"note": "The single most useful hour if you ship into Government Regions. Real ATO strategies, service parity gaps, and deployment patterns for Bedrock agents across classification levels."
+},
+{
+"code": "IND401",
+"track": "physical",
+"tier": 1,
+"note": "Build a digital twin of a multi-robot manufacturing cell in 60 minutes — virtual PLCs, real fieldbus, Omniverse physics, EC2 backing it. You leave with a validated robotic program and a reusable blueprint."
+},
+{
+"code": "IND409",
+"track": "mission",
+"tier": 1,
+"note": "NIST 800-171 / CMMC L2 landing zone deep dive, including what they got wrong and iterated on. Open-source CloudFormation on GitHub — a reusable asset, not just a talk."
+},
+{
+"code": "IND418",
+"track": "mission",
+"tier": 1,
+"note": "Agentic orchestration inside high-side environments under IL4/IL5 and zero trust. Rare to get this level of detail on the constrained side of the fence."
+},
+{
+"code": "INV506",
+"track": "rigor",
+"tier": 1,
+"note": "Provable safety envelopes for probabilistic agents, drawn from the formal verification research behind AgentCore policy — automated reasoning for policy correctness, action-space reduction before execution. This is how you get an agent past a security review."
+},
+{
+"code": "INV517",
+"track": "train",
+"tier": 1,
+"note": "Distinguished-level: head-of-line blocking on prefill, decode stragglers, pipeline bubbles, temporally-disaggregated pipeline parallelism, constrained decoding with context-sensitive grammars, KV-cache parallelism for multi-million contexts."
+},
+{
+"code": "INV526",
+"track": "rigor",
+"tier": 1,
+"note": "What neurosymbolic AI can actually prove about agent behavior: autoformalization into temporal logic, SAT solvers, LLM-guided proof search in Lean, and an honest map of what remains undecidable."
+},
+{
+"code": "INV527",
+"track": "physical",
+"tier": 1,
+"note": "Distinguished-level failure analysis of a trajectory-conditioned lidar world model for a hospital robot fleet: why standard losses fail for generative spatial prediction, why rotation breaks factored attention. A diagnostic framework, not a product pitch."
+},
+{
+"code": "AIM305",
+"track": "physical",
+"tier": 2,
+"note": "Fine-tune a transformer world model and deploy robotic agents for real-time inference on Trainium, with parameter-efficient training strategies."
+},
+{
+"code": "AIM311",
+"track": "train",
+"tier": 2,
+"note": "Full-stack LLM serving on Trainium: vLLM Neuron, disaggregated inference, prefix-cache-aware routing, then EKS topology-aware scheduling and fault recovery underneath."
+},
+{
+"code": "AIM312",
+"track": "train",
+"tier": 2,
+"note": "RLHF and GRPO on Trainium via Neuron, TorchTitan, TRL, and vLLM, with a co-located vs disaggregated RL architecture comparison."
+},
+{
+"code": "AIM314",
+"track": "rigor",
+"tier": 2,
+"note": "Governance for agents making high-stakes decisions — a workshop, so you build the controls rather than hear about them."
+},
+{
+"code": "AIM318",
+"track": "train",
+"tier": 2,
+"note": "Vision-language model training that survives node crashes and corrupt checkpoints. You simulate failures and recover. Directly relevant if you touch multimodal or geospatial models."
+},
+{
+"code": "AIM325",
+"track": "train",
+"tier": 2,
+"note": "Managed multi-turn RL on SageMaker that wraps a Strands, LangChain, or CrewAI agent in under 10 lines — reward design, rollouts in managed gym environments, decoupled training compute."
+},
+{
+"code": "AIM334",
+"track": "train",
+"tier": 2,
+"note": "Distributed training on Trainium through native PyTorch and TorchTitan — cluster setup, parallelism strategies, tuning. The cleanest hands-on route into Trainium if you have never touched Neuron."
+},
+{
+"code": "AIM345",
+"track": "train",
+"tier": 2,
+"note": "You run both unified and disaggregated inference architectures yourself, move KV cache over EFA, and benchmark against agentic traffic. Leaves you with a real decision framework and runnable configs."
+},
+{
+"code": "AIM360",
+"track": "physical",
+"tier": 2,
+"note": "Panel on world models across video, vision, language, and action for physical AI and autonomous systems, with researchers and customers on production deployments."
+},
+{
+"code": "AIM401",
+"track": "physical",
+"tier": 2,
+"note": "A Strands agent running the entire RL loop autonomously: generates reward functions from a natural-language objective, evaluates in simulation, diagnoses failures, tunes hyperparameters, iterates to convergence."
+},
+{
+"code": "AIM403",
+"track": "train",
+"tier": 2,
+"note": "End-to-end data prep, distributed training, and serving on HyperPod, including simulating a node failure and watching training auto-resume. Tiered checkpointing and managed KV cache."
+},
+{
+"code": "AIM416",
+"track": "build",
+"tier": 2,
+"note": "Running coding agents at scale on AgentCore — the infrastructure question once agents stop being one developer's laptop experiment."
+},
+{
+"code": "AIM433",
+"track": "train",
+"tier": 2,
+"note": "HyperPod as one shared GPU pool across data prep, training, post-training, and inference, with team isolation and submission strategies. The multi-team utilization problem, which is a real one in an agency."
+},
+{
+"code": "AIM434",
+"track": "mlops",
+"tier": 2,
+"note": "Dataset prep as a first-class stage — profiling, auto-labeling, human review of edge cases, dedup, toxicity filtering, synthetic data for coverage gaps, then formatting for SFT, DPO, RLVR, and RLAIF."
+},
+{
+"code": "AIM435",
+"track": "train",
+"tier": 2,
+"note": "On-policy distillation on HyperPod EKS: compress a large teacher into a domain-specialized student using the student's own rollouts. Cheaper and more stable than RLVR, and no verifier needed."
+},
+{
+"code": "AIM443",
+"track": "mlops",
+"tier": 2,
+"note": "One HyperPod training pipeline that deploys the same model into Bedrock or AgentCore, with governance following the model rather than bolted on afterward."
+},
+{
+"code": "AIM456",
+"track": "mlops",
+"tier": 2,
+"note": "A fine-tuning pipeline that proves its own results: baseline eval, QLoRA fine-tune, RLAIF/RLVR pass, re-eval against the same bar. The discipline most fine-tuning work skips."
+},
+{
+"code": "AIM458-S",
+"track": "physical",
+"tier": 2,
+"note": "Full NVIDIA-plus-AWS physical AI pipeline in one workshop: Isaac Sim synthetic data, GR00T and Cosmos training, Omniverse twin, Greengrass edge deploy, AgentCore fleet orchestration. Sponsored, but the toolchain coverage is unmatched."
+},
+{
+"code": "ANT303",
+"track": "data",
+"tier": 2,
+"note": "Open lakehouse on Apache Iceberg for analytics and AI. The format decision that keeps your data portable across engines and, importantly, across partitions."
+},
+{
+"code": "ANT316",
+"track": "data",
+"tier": 2,
+"note": "From prompt to pipeline: the chalk-talk version of agentic data engineering, with more room to argue about where it breaks."
+},
+{
+"code": "ANT330",
+"track": "data",
+"tier": 2,
+"note": "Agentic data engineering inside SageMaker — agents building and maintaining pipelines rather than you writing every ETL job."
+},
+{
+"code": "ANT407",
+"track": "data",
+"tier": 2,
+"note": "Governing agents with data quality, lineage, and business context. Lineage is the artifact auditors actually ask you for."
+},
+{
+"code": "ARC408",
+"track": "build",
+"tier": 2,
+"note": "Specs, not vibes: strangling a monolith from inside the IDE. The disciplined counterweight to vibe-coding, which matters more when your code needs to pass review."
+},
+{
+"code": "CMP308",
+"track": "hpc",
+"tier": 2,
+"note": "Migrating existing HPC estates onto PCS at scale. Relevant if you inherit an on-prem cluster, which in public sector you usually do."
+},
+{
+"code": "CMP408",
+"track": "physical",
+"tier": 2,
+"note": "DCV streaming an Omniverse and Isaac Sim workstation from EC2 G instances to a browser, with AWS Batch running the same scenes headless across GPU fleets. Fixes the 'engineers lack RTX hardware' problem directly."
+},
+{
+"code": "CMP410",
+"track": "hpc",
+"tier": 2,
+"note": "Using AI to tune HPC configurations on AWS rather than hand-tuning them."
+},
+{
+"code": "CON409",
+"track": "physical",
+"tier": 2,
+"note": "AWS Batch orchestrating burst simulation and GPU training end to end, with outputs flowing through a shared data lake back into training. Solves the no-standing-fleet budget problem."
+},
+{
+"code": "DVT405",
+"track": "build",
+"tier": 2,
+"note": "How Kiro validates specs before writing any code. Directly relevant to shipping under a compliance regime where intent has to be documented anyway."
+},
+{
+"code": "HMC314",
+"track": "mission",
+"tier": 2,
+"note": "Compares Dedicated Local Zones, Outposts, and Regions against data residency, key management, and network separation — plus detecting non-permitted data flows. The sovereignty decision matrix."
+},
+{
+"code": "IND3316",
+"track": "mission",
+"tier": 2,
+"note": "California Community Colleges cut attempted financial-aid fraud 64% with SageMaker. A genuine public-sector ML case study with numbers, not a genAI demo."
+},
+{
+"code": "IND352",
+"track": "physical",
+"tier": 2,
+"note": "Commanding autonomous drone fleets for search-and-rescue with Bedrock Agents, Greengrass, and SageMaker, escalating to humans on confidence thresholds. Human-machine teaming with a public-safety mission."
+},
+{
+"code": "IND361",
+"track": "mission",
+"tier": 2,
+"note": "Hands-on CDK build of an edge-to-cloud tokenization data plane: sensitive data stays local, masked payloads go to Bedrock. The workaround pattern for data-localization mandates."
+},
+{
+"code": "IND366",
+"track": "data",
+"tier": 2,
+"note": "Zero-shot forecasting with Chronos 2 in SageMaker Unified Studio — no historical training, no cold-start problem. Framed for retail, but the pattern transfers to caseload, demand, and staffing forecasts."
+},
+{
+"code": "IND398",
+"track": "mission",
+"tier": 2,
+"note": "Air Force SOC + AWS built a multi-agent Bedrock system for log analysis and one-click containment across DoD accounts. Fifteen minutes, high signal."
+},
+{
+"code": "IND410",
+"track": "mission",
+"tier": 2,
+"note": "Kiro in a regulated federal context — steering rules to constrain agent behavior, hooks for automated testing and docs. Practical if compliance is what slows your team down."
+},
+{
+"code": "INV503",
+"track": "rigor",
+"tier": 2,
+"note": "Evaluating AI safety with formal guarantees rather than benchmark scores. Pairs with INV506 and INV526 as a coherent three-session arc."
+},
+{
+"code": "INV508",
+"track": "rigor",
+"tier": 2,
+"note": "How neurosymbolic AI formalizes natural language into verifiable logic — the mechanism underneath IND395's eligibility-engine work."
+},
+{
+"code": "INV509",
+"track": "train",
+"tier": 2,
+"note": "Why NUMA topology silently costs you inference throughput across Graviton, Intel, and AMD — thread-to-data alignment, SIMD/AMX bandwidth pressure, host-side effects on KV cache offload."
+},
+{
+"code": "INV511",
+"track": "train",
+"tier": 2,
+"note": "The design of NKI, the Python-embedded DSL for Trainium's memory hierarchy and compute engines, dissecting production FlashAttention and MoE-routing kernels. Go if you want to write kernels, not just call them."
+},
+{
+"code": "INV522",
+"track": "rigor",
+"tier": 2,
+"note": "The evaluator is the algorithm: evolving state of the art for $15. A sharp argument about where progress actually comes from."
+},
+{
+"code": "NET328",
+"track": "hpc",
+"tier": 2,
+"note": "How Elastic Fabric Adapter carries the largest AI workloads on AWS. The networking half of why your multi-node training run is slow."
+},
+{
+"code": "STG343",
+"track": "data",
+"tier": 2,
+"note": "Storage architecture as an AI performance lever rather than an afterthought. Complements AIM347."
+},
+{
+"code": "AIM278-S",
+"track": "rigor",
+"tier": 3,
+"note": "Open-source agent observability and evals with AgentCore and Langfuse. Sponsored, but Langfuse is a real option if you want to avoid lock-in."
+},
+{
+"code": "AIM304",
+"track": "physical",
+"tier": 3,
+"note": "Deploying a real-time video world model on Trainium using Neuron agentic skills that automate compilation, profiling, and kernel selection."
+},
+{
+"code": "AIM307",
+"track": "build",
+"tier": 3,
+"note": "Turning a coding agent into an always-on dev team with AgentCore."
+},
+{
+"code": "AIM310",
+"track": "train",
+"tier": 3,
+"note": "Trainium3 microarchitecture: NeuronCore changes, hardware quantization, softmax acceleration, MoE optimizations, and UltraServer scaling to 144 chips. Go if you evaluate silicon."
+},
+{
+"code": "AIM323",
+"track": "physical",
+"tier": 3,
+"note": "World model serving with torch.compile graph fusion and NKI custom kernels for attention. Pairs naturally with INV511."
+},
+{
+"code": "AIM326",
+"track": "train",
+"tier": 3,
+"note": "Workshop on frontier-model inference economics on Trainium with the Neuron stack and open-source frameworks. Overlaps AIM311 — pick one."
+},
+{
+"code": "AIM372",
+"track": "build",
+"tier": 3,
+"note": "Anthropic models on AWS: what is available and how to deploy it. Efficient orientation if Claude is in your stack."
+},
+{
+"code": "AIM392",
+"track": "train",
+"tier": 3,
+"note": "Where EC2 G7e/G7 beats the P-family for prefill, FP4 decode, and pipeline-parallel training, with a TCO comparison. Practical cost-control material."
+},
+{
+"code": "AIM402",
+"track": "mlops",
+"tier": 3,
+"note": "Serverless model customization APIs across SFT, DPO, RLVR, RLAIF, and multi-turn RL with no GPUs to manage. The low-friction path when procurement is the bottleneck."
+},
+{
+"code": "AIM406",
+"track": "train",
+"tier": 3,
+"note": "The Kubernetes-flavored version of AIM403: HyperPod on EKS with checkpointless recovery, then inference on the same cluster. Choose based on whether your platform is EKS."
+},
+{
+"code": "ANT302",
+"track": "mlops",
+"tier": 3,
+"note": "Platform-level what's-new across SageMaker: lakehouse, catalog, governance, dev experience. Efficient way to catch launches without sitting through a keynote."
+},
+{
+"code": "ANT318",
+"track": "data",
+"tier": 3,
+"note": "Making vector search faster, more relevant, and cheaper. Practical tuning for any RAG system you already run."
+},
+{
+"code": "ANT322",
+"track": "data",
+"tier": 3,
+"note": "Agent retrieval specifically on OpenSearch Service. Narrower than ANT311; skip if you take that one."
+},
+{
+"code": "ANT423",
+"track": "data",
+"tier": 3,
+"note": "Building a managed context layer from semantic data with AWS Context. New primitive worth understanding early."
+},
+{
+"code": "BIZ330",
+"track": "rigor",
+"tier": 3,
+"note": "A production-readiness framework for agents: evaluate, disclose, safeguard. Useful checklist material for a review board."
+},
+{
+"code": "CMP338",
+"track": "hpc",
+"tier": 3,
+"note": "Crash prediction models combining HPC and AI — a concrete simulation-plus-ML pattern."
+},
+{
+"code": "CMP404",
+"track": "hpc",
+"tier": 3,
+"note": "Genomics HPC pipeline workshop. Take it as a template for any scientific batch pipeline, not just bioinformatics."
+},
+{
+"code": "CON414",
+"track": "train",
+"tier": 3,
+"note": "Model customization and serving on EKS at high GPU utilization, including hybrid nodes spanning cloud and on-premises GPUs."
+},
+{
+"code": "DVT320",
+"track": "build",
+"tier": 3,
+"note": "How Kiro improves across sessions. Interesting for how they built the learning loop, not just for using the tool."
+},
+{
+"code": "DVT332",
+"track": "build",
+"tier": 3,
+"note": "Kiro Crew internals: orchestration, memory, and safe autonomy. Architecture-level view of a multi-agent coding system."
+},
+{
+"code": "IND309",
+"track": "mission",
+"tier": 3,
+"note": "Strategic framing on AI/HPC for defense and national security. Low technical density — go if you need material for leadership conversations."
+},
+{
+"code": "IND393",
+"track": "mission",
+"tier": 3,
+"note": "Georgia DCS contact center modernization on Amazon Connect. Useful mostly for the stakeholder-alignment and use-case-prioritization lessons."
+},
+{
+"code": "INV514",
+"track": "rigor",
+"tier": 3,
+"note": "Measuring emergent risks in frontier models. Research-flavored, useful if you advise on model selection policy."
+},
+{
+"code": "NET327",
+"track": "mission",
+"tier": 3,
+"note": "Cross-partition connectivity between commercial, GovCloud, and Sovereign Cloud: VPN, Direct Connect, DNS, and compliance-boundary enforcement. Niche, but nobody else covers it."
+},
+{
+"code": "SNR319",
+"track": "physical",
+"tier": 3,
+"note": "Amazon coordinates a million-plus robots with one model and still keeps humans in the loop, because a wrong action cannot be rolled back. Leadership framing you can reuse verbatim in a mission-risk conversation."
+},
+{
+"code": "STG306",
+"track": "data",
+"tier": 3,
+"note": "Iceberg data lakes on S3 Tables. The managed-table-maintenance question, answered."
+},
+{
+"code": "STG354",
+"track": "hpc",
+"tier": 3,
+"note": "Storage throughput and IOPS tuning for HPC. Pairs with AIM347's Lustre material."
+},
+{
+"code": "SVS303",
+"track": "build",
+"tier": 3,
+"note": "AI-driven serverless development with Kiro. Take it if serverless is your default application shape."
+},
+{
+"code": "TNC312",
+"track": "mlops",
+"tier": 3,
+"note": "Hands-on lab: fine-tune for valid tool-call output and consistent persona, then ground it with Bedrock RAG. Good if you want the fine-tune-vs-RAG tradeoff in your hands."
+},
+{
+"code": "TNC336",
+"track": "build",
+"tier": 3,
+"note": "Bootcamp on the AI-Driven Development Lifecycle. Longer format — only worth it if you are trying to change how a whole team works."
+}
+]
