@@ -1,5 +1,7 @@
 # re:Invent 2026 — Mission Track
 
+**Docs:** `~/Documents/personal/projects/reinvent-2026` · **Origin:** `~/git/reinvent-2026.git`
+
 A personalised AWS re:Invent 2026 session planner, built from the live event
 catalog and published as an Artifact.
 
