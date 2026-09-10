@@ -1,7 +1,7 @@
 {
- "pulled": "2026-09-04",
- "catalogTotal": 1495,
- "sessions": 1495,
+ "pulled": "2026-09-08",
+ "catalogTotal": 1501,
+ "sessions": 1501,
  "picks": 97,
  "scheduled": 0,
  "days": [],
@@ -9,19 +9,19 @@
   "tp": [
    [
     "Artificial Intelligence",
-    743
+    745
    ],
    [
     "Security & Identity",
-    223
+    224
    ],
    [
     "Architecture",
-    177
+    178
    ],
    [
     "Cloud Operations",
-    168
+    170
    ],
    [
     "Migration & Modernization",
@@ -29,11 +29,11 @@
    ],
    [
     "Developer Tools",
-    135
+    136
    ],
    [
     "Business Agents",
-    123
+    124
    ],
    [
     "Analytics",
@@ -69,11 +69,11 @@
    ],
    [
     "Networking & Content Delivery",
-    61
+    62
    ],
    [
     "Hybrid Cloud & Multicloud",
-    60
+    61
    ],
    [
     "Open Source",
@@ -87,11 +87,11 @@
    ],
    [
     "Generative AI",
-    239
+    240
    ],
    [
     "Innovation & Transformation",
-    204
+    205
    ],
    [
     "Cost Optimization",
@@ -99,7 +99,7 @@
    ],
    [
     "DevOps",
-    147
+    148
    ],
    [
     "Automation",
@@ -115,7 +115,7 @@
    ],
    [
     "Global Infrastructure",
-    67
+    68
    ],
    [
     "Machine Learning",
@@ -150,12 +150,12 @@
     44
    ],
    [
-    "Well-Architected Framework",
+    "Management & Governance",
     43
    ],
    [
-    "Management & Governance",
-    42
+    "Well-Architected Framework",
+    43
    ],
    [
     "Kubernetes",
@@ -174,12 +174,12 @@
     32
    ],
    [
-    "Business Intelligence",
+    "Edge Computing",
     31
    ],
    [
-    "Edge Computing",
-    30
+    "Business Intelligence",
+    31
    ],
    [
     "Customer Enablement",
@@ -285,15 +285,15 @@
   "ro": [
    [
     "Solution / Systems Architect",
-    697
+    698
    ],
    [
     "Developer / Engineer",
-    690
+    691
    ],
    [
     "IT Professional / Technical Manager",
-    345
+    346
    ],
    [
     "DevOps Engineer",
@@ -301,7 +301,7 @@
    ],
    [
     "IT Executive",
-    219
+    222
    ],
    [
     "Business Executive",
@@ -378,11 +378,11 @@
     11
    ],
    [
-    "Telecommunications",
-    8
+    "Automotive",
+    9
    ],
    [
-    "Automotive",
+    "Telecommunications",
     8
    ],
    [
