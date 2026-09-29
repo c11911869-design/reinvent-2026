@@ -22,6 +22,7 @@ HDRS = {"rfapiprofileid": PROFILE,
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": "Mozilla/5.0"}
 BASE = re.compile(r"-R\d*$")     # repeat offerings: AIM347-R1 -> AIM347
+LIGHTNING_MIN = 20               # assumed length when a slot publishes end == start
 
 
 # ---------------------------------------------------------------- fetch
@@ -72,6 +73,23 @@ def slots_for(rec):
             "capacity": int(t.get("capacity") or 0),
         })
     return got
+
+
+def fix_zero_length(catalog):
+    """Some lightning talks publish end == start. A zero-length slot can never
+    clash with anything, so assume the standard length and flag the end time
+    as an estimate rather than let it slip through the clash checks."""
+    n = 0
+    for r in catalog:
+        for s in r["s"]:
+            if s["endMin"] > s["startMin"] or s.get("endEst"):
+                continue
+            s["endMin"] = s["startMin"] + LIGHTNING_MIN
+            h, m = divmod(s["endMin"], 60)
+            s["end"] = f"{(h - 1) % 12 + 1:02d}:{m:02d} {'AM' if h < 12 else 'PM'}"
+            s["endEst"] = True
+            n += 1
+    return n
 
 
 def build_catalog(recs):
@@ -166,6 +184,12 @@ def main():
         recs_n = len(recs)
         print(f"  {recs_n} records")
         catalog = build_catalog(recs)
+        (DATA / "catalog.json").write_text(
+            json.dumps(catalog, separators=(",", ":"), ensure_ascii=False))
+
+    fixed = fix_zero_length(catalog)
+    if fixed:
+        print(f"  {fixed} zero-length slots given an estimated {LIGHTNING_MIN}-min end")
         (DATA / "catalog.json").write_text(
             json.dumps(catalog, separators=(",", ":"), ensure_ascii=False))
 

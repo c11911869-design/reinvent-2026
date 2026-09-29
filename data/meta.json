@@ -1,79 +1,105 @@
 {
- "pulled": "2026-09-08",
- "catalogTotal": 1501,
- "sessions": 1501,
- "picks": 97,
- "scheduled": 0,
- "days": [],
+ "pulled": "2026-09-28",
+ "catalogTotal": 2044,
+ "sessions": 1604,
+ "picks": 92,
+ "scheduled": 1557,
+ "days": [
+  {
+   "sort": "20261130",
+   "name": "Monday",
+   "date": "2026-11-30"
+  },
+  {
+   "sort": "20261201",
+   "name": "Tuesday",
+   "date": "2026-12-01"
+  },
+  {
+   "sort": "20261202",
+   "name": "Wednesday",
+   "date": "2026-12-02"
+  },
+  {
+   "sort": "20261203",
+   "name": "Thursday",
+   "date": "2026-12-03"
+  },
+  {
+   "sort": "20261204",
+   "name": "Friday",
+   "date": "2026-12-04"
+  }
+ ],
  "facets": {
   "tp": [
    [
     "Artificial Intelligence",
-    745
+    784
    ],
    [
     "Security & Identity",
-    224
+    265
    ],
    [
     "Architecture",
-    178
+    185
    ],
    [
     "Cloud Operations",
-    170
+    176
    ],
    [
     "Migration & Modernization",
-    161
-   ],
-   [
-    "Developer Tools",
-    136
+    170
    ],
    [
     "Business Agents",
-    124
+    149
+   ],
+   [
+    "Developer Tools",
+    138
    ],
    [
     "Analytics",
     111
    ],
    [
-    "Compute",
-    110
+    "Industry Solutions",
+    111
    ],
    [
-    "Industry Solutions",
-    105
+    "Compute",
+    111
    ],
    [
     "Databases",
-    99
+    100
    ],
    [
     "Serverless",
-    88
+    90
    ],
    [
     "Storage",
-    81
+    84
    ],
    [
     "Containers",
-    81
+    84
    ],
    [
     "Application Integration",
+    68
+   ],
+   [
+    "Hybrid Cloud & Multicloud",
     66
    ],
    [
     "Networking & Content Delivery",
-    62
-   ],
-   [
-    "Hybrid Cloud & Multicloud",
-    61
+    63
    ],
    [
     "Open Source",
@@ -83,131 +109,135 @@
   "ai": [
    [
     "Agentic AI",
-    644
+    707
    ],
    [
     "Generative AI",
-    240
+    257
    ],
    [
     "Innovation & Transformation",
-    205
+    212
    ],
    [
     "Cost Optimization",
-    167
+    176
    ],
    [
     "DevOps",
-    148
+    158
    ],
    [
     "Automation",
-    137
+    149
    ],
    [
     "Monitoring & Observability",
-    106
+    117
    ],
    [
     "Resilience",
-    89
-   ],
-   [
-    "Global Infrastructure",
-    68
-   ],
-   [
-    "Machine Learning",
-    62
+    95
    ],
    [
     "Governance, Risk & Compliance",
-    61
+    81
+   ],
+   [
+    "Application Security",
+    73
+   ],
+   [
+    "Global Infrastructure",
+    73
+   ],
+   [
+    "Machine Learning",
+    65
+   ],
+   [
+    "Identity & Access Management",
+    59
    ],
    [
     "Lambda-Based Applications",
     55
    ],
    [
-    "Application Security",
-    54
-   ],
-   [
-    "Data Protection",
-    49
+    "DevSecOps",
+    52
    ],
    [
     "Training & Certification",
+    49
+   ],
+   [
+    "Data Protection",
+    48
+   ],
+   [
+    "Well-Architected Framework",
     48
    ],
    [
     "Event-Driven Architecture",
-    46
+    47
    ],
    [
     "Network & Infrastructure Security",
-    44
+    46
    ],
    [
     "Management & Governance",
-    43
+    45
    ],
    [
-    "Well-Architected Framework",
+    "Threat Detection & Incident Response",
     43
    ],
    [
     "Kubernetes",
-    41
+    43
    ],
    [
     "Responsible AI",
-    38
+    40
    ],
    [
-    "DevSecOps",
-    37
+    "Customer Enablement",
+    34
    ],
    [
-    "Identity & Access Management",
-    32
+    "Business Intelligence",
+    33
    ],
    [
     "Edge Computing",
     31
    ],
    [
-    "Business Intelligence",
-    31
-   ],
-   [
-    "Customer Enablement",
-    30
-   ],
-   [
     "Disaster Response & Recovery",
     27
    ],
    [
-    "Threat Detection & Incident Response",
-    25
-   ],
-   [
     "Open Data",
-    23
+    24
    ],
    [
     "SaaS",
-    20
+    21
+   ],
+   [
+    "Microsoft & .NET",
+    21
    ],
    [
     "VMware",
     20
    ],
    [
-    "Microsoft & .NET",
-    19
+    "Culture of Security",
+    18
    ],
    [
     "Tech for Impact",
@@ -222,19 +252,19 @@
     17
    ],
    [
-    "Culture of Security",
-    17
-   ],
-   [
-    "SAP",
+    "Threat Intelligence",
     14
    ],
    [
-    "Threat Intelligence",
-    12
+    "SAP",
+    13
    ],
    [
     "Digital Sovereignty",
+    11
+   ],
+   [
+    "Zero Trust",
     11
    ],
    [
@@ -242,12 +272,8 @@
     11
    ],
    [
-    "Zero Trust",
-    10
-   ],
-   [
     "Robotics",
-    10
+    9
    ],
    [
     "Internet of Things",
@@ -266,11 +292,11 @@
     7
    ],
    [
-    "Blockchain",
-    5
+    "Cryptography and Post-Quantum",
+    6
    ],
    [
-    "Cryptography and Post-Quantum",
+    "Blockchain",
     5
    ],
    [
@@ -285,71 +311,71 @@
   "ro": [
    [
     "Solution / Systems Architect",
-    698
+    742
    ],
    [
     "Developer / Engineer",
-    691
+    740
    ],
    [
     "IT Professional / Technical Manager",
-    346
+    372
    ],
    [
     "DevOps Engineer",
-    326
+    348
    ],
    [
     "IT Executive",
-    222
+    237
    ],
    [
     "Business Executive",
-    186
-   ],
-   [
-    "Data Engineer",
-    111
+    194
    ],
    [
     "Cloud Security Specialist",
-    111
+    149
+   ],
+   [
+    "Data Engineer",
+    118
    ],
    [
     "IT Administrator",
-    80
+    84
    ],
    [
     "Academic / Researcher",
-    70
+    71
    ],
    [
     "Data Scientist",
-    64
+    66
    ],
    [
     "System Administrator",
-    64
+    65
    ],
    [
     "Advisor / Consultant",
-    37
-   ],
-   [
-    "Tech Explorer",
-    27
+    39
    ],
    [
     "Sales / Marketing",
-    26
+    29
+   ],
+   [
+    "Tech Explorer",
+    28
    ],
    [
     "Entrepreneur (Founder/Co-Founder)",
-    23
+    24
    ],
    [
     "Venture Capitalist",
-    2
+    1
    ],
    [
     "Student",
@@ -359,15 +385,15 @@
   "in": [
    [
     "Financial Services",
-    38
+    43
    ],
    [
     "Media & Entertainment",
-    18
+    19
    ],
    [
     "Government",
-    17
+    18
    ],
    [
     "Retail & Consumer Goods",
@@ -375,11 +401,11 @@
    ],
    [
     "Healthcare & Life Sciences",
-    11
+    12
    ],
    [
     "Automotive",
-    9
+    10
    ],
    [
     "Telecommunications",
@@ -390,16 +416,16 @@
     8
    ],
    [
-    "Education",
-    7
-   ],
-   [
     "Manufacturing & Industrial",
-    7
+    8
    ],
    [
     "Advertising & Marketing",
-    5
+    7
+   ],
+   [
+    "Education",
+    7
    ],
    [
     "Energy & Utilities",

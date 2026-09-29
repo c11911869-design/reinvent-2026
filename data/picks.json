@@ -48,12 +48,6 @@
 "note": "Strands Robots SDK: one Robot() call gives an agent hands, MuJoCo by default and real hardware with a parameter change. Covers perception, VLA policies (GR00T, Cosmos 3, LeRobot), edge-to-cloud split, fleet mesh, and sim-to-real."
 },
 {
-"code": "ANT311",
-"track": "data",
-"tier": 1,
-"note": "Agents fire hundreds of sub-queries per task and cascade retrieval failures into hallucinations. What breaks in traditional search at agent scale and how OpenSearch addresses it."
-},
-{
 "code": "ANT336",
 "track": "data",
 "tier": 1,
@@ -88,18 +82,6 @@
 "track": "build",
 "tier": 1,
 "note": "Reusable skills that encode team know-how, custom agents for specific jobs, and steering files that carry conventions across sessions. Demoed in Kiro but the principles transfer to any agentic coding tool."
-},
-{
-"code": "IND395",
-"track": "mission",
-"tier": 1,
-"note": "Neurosymbolic AI replacing Drools eligibility engines for SNAP/Medicaid — LLM ingests policy, formal logic verifies it, decisions stay deterministic and auditable. This is the honest answer to 'we can't ship a hallucinating model.'"
-},
-{
-"code": "IND396",
-"track": "mission",
-"tier": 1,
-"note": "IRS replaced a sub-10%-accuracy rules engine with an agentic system on GovCloud and went from 10+ weeks to one day. Architecture plus the compliance journey, told by the agency."
 },
 {
 "code": "IND397",
@@ -468,12 +450,6 @@
 "note": "Platform-level what's-new across SageMaker: lakehouse, catalog, governance, dev experience. Efficient way to catch launches without sitting through a keynote."
 },
 {
-"code": "ANT318",
-"track": "data",
-"tier": 3,
-"note": "Making vector search faster, more relevant, and cheaper. Practical tuning for any RAG system you already run."
-},
-{
 "code": "ANT322",
 "track": "data",
 "tier": 3,
@@ -544,12 +520,6 @@
 "track": "mission",
 "tier": 3,
 "note": "Cross-partition connectivity between commercial, GovCloud, and Sovereign Cloud: VPN, Direct Connect, DNS, and compliance-boundary enforcement. Niche, but nobody else covers it."
-},
-{
-"code": "SNR319",
-"track": "physical",
-"tier": 3,
-"note": "Amazon coordinates a million-plus robots with one model and still keeps humans in the loop, because a wrong action cannot be rolled back. Leadership framing you can reuse verbatim in a mission-risk conversation."
 },
 {
 "code": "STG306",
