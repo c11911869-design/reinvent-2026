@@ -25,6 +25,12 @@ const CURATED = PICKS.map(p => SESS.get(p.code)).filter(Boolean);
 const VNAME = Object.fromEntries(VENUES.map(v => [v.k, v.n]));
 
 const $ = s => document.querySelector(s);
+/* Script errors are otherwise invisible inside the viewer's frame; keep the
+   last one for the diagnostics line. */
+let lastError = "";
+function noteError(e) { lastError = String(e?.message || e?.reason?.message || e?.reason || e).slice(0, 160); }
+window.addEventListener("error", e => noteError(e.error || e.message));
+window.addEventListener("unhandledrejection", e => noteError(e.reason));
 const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const out = $("#out");
@@ -57,40 +63,129 @@ const saveCmp  = () => cmp ? lsSet(K.cmp, {name:cmp.name, codes:[...cmp.codes]})
 const state = {q:"", tracks:new Set(), f:new Set(), view:"foryou", day:null};
 
 /* ---------- capabilities (resolve late, never assumed) ---------- */
-let DB = null, SAMPLE = null, DL = null;
-let attendees = [];            // [{id,name,plan:[],updated}]
+let DB = null, SAMPLE = null, DL = null, USER = null;
+let uid = null;                // verified account id from the user capability, when served
+let attendees = [];            // [{id,name,plan:[],slots:{},updated}]
 let notesByCode = new Map();   // code -> [{id,by,name,text,updated}]
+let claims = new Map();        // code -> {code,by,at}: who is covering a session for the team
+let summaries = new Map();     // code | "_team" -> {text,by,at,noteCount,stamp}
 let dbState = "connecting";    // connecting | ready | unavailable
 let dbError = "";              // last write error code, surfaced in the UI
+let feedError = "";            // a live subscription died; the view may be stale
 const explain = {
   not_persisted: "The write was accepted locally but never reached the shared store.",
   readback_failed: "The write was sent but could not be read back.",
   invalid_argument: "The shared store refused the write as invalid.",
   not_granted: "This view was not granted access to the shared store.",
   revoked: "Access to the shared store was withdrawn while the page was open.",
+  quota_exceeded: "The shared store is full.",
+  resource_exhausted: "Too many writes at once — wait a moment and try again.",
 };
 const explainDb = c => explain[c] || "The shared store rejected the last write.";
 
+/* Who am I? A verified account id when the page is served with `user`,
+   otherwise the random id this browser minted when you joined. */
+const myId = () => uid || me?.id || null;
+const isMe = id => !!id && id === myId();
+
+/* Display names. Profile names are resolved per viewer and never stored;
+   the self-declared name on the attendee row is the fallback. */
+let profileNames = {};
+function nameOf(id, fallback) {
+  return profileNames[id] || fallback
+    || attendees.find(a => a.id === id)?.name || "Someone";
+}
+let namesInFlight = false;
+async function resolveNames() {
+  if (!USER || namesInFlight) return;
+  const ids = [...new Set([...attendees.map(a => a.id),
+    ...[...claims.values()].map(c => c.by),
+    ...[...notesByCode.values()].flat().map(n => n.by)].filter(Boolean))];
+  const missing = ids.filter(id => !(id in profileNames));
+  if (!missing.length) return;
+  namesInFlight = true;
+  try {
+    const ps = await USER.profiles(ids);
+    let changed = false;
+    ids.forEach(id => { const n = ps[id]?.name || ""; if (profileNames[id] !== n) { profileNames[id] = n; changed = true; } });
+    if (changed) { render(); if (openCode) refreshDrawer(); }
+  } catch (e) { /* profiles() never rejects; nothing to do */ }
+  finally { namesInFlight = false; }
+}
+
+function watch(col, onDocs) {
+  try {
+    DB.collection(col).onSnapshot(
+      snap => { onDocs(snap.docs.map(d => ({id:d.id, ...d.data()}))); render(); if (openCode) refreshDrawer(); resolveNames(); },
+      err => { feedError = `${col}: ${err?.code || "error"}`; render(); });
+  } catch (e) { feedError = `${col}: ${e?.code || "error"}`; }
+}
+
 async function bootCaps() {
   if (typeof window.claude?.use !== "function") { dbState = "unavailable"; render(); return; }
-  try { DB = await window.claude.use("db"); } catch(e) { DB = null; }
-  try { SAMPLE = await window.claude.use("sample"); } catch(e) { SAMPLE = null; }
-  try { DL = await window.claude.use("downloads"); } catch(e) { DL = null; }
+  const use = async n => { try { return await window.claude.use(n); } catch (e) { return null; } };
+  [DB, SAMPLE, DL, USER] = await Promise.all([use("db"), use("sample"), use("downloads"), use("user")]);
+  if (USER) { try { uid = await USER.id(); } catch (e) { uid = null; } }
   dbState = DB ? "ready" : "unavailable";
   if (DB) {
-    try {
-      DB.collection("attendees").onSnapshot(
-        snap => { attendees = snap.docs.map(d => ({id:d.id, ...d.data()})); render(); },
-        err => { dbError = err?.code || "error"; render(); });
-    } catch(e) { dbError = e?.code || "error"; }
-    // The name may have been set before db resolved — push it now.
-    if (me?.id) pushNow();
+    watch("attendees", docs => {
+      attendees = docs;
+      // The same person on another device changed their plan: take it.
+      const row = docs.find(a => isMe(a.id));
+      if (row?.updated && lastPushed && row.updated > lastPushed && !pushT) adoptRemote(row);
+    });
+    watch("notes", docs => {
+      notesByCode = new Map();
+      docs.forEach(n => { if (!n.code) return;
+        (notesByCode.get(n.code) || notesByCode.set(n.code, []).get(n.code)).push(n); });
+    });
+    // A lease can leave a claim doc with no owner in its body — that is unclaimed.
+    watch("claims", docs => { claims = new Map(docs.filter(c => c.by).map(c => [c.id, c])); });
+    watch("summaries", docs => { summaries = new Map(docs.map(s => [s.id, s])); });
+    if (me?.id && uid && me.id !== uid) await adoptVerifiedId();
+    // What the store holds for me wins over this browser's copy: it is how a
+    // second device picks up your plan instead of overwriting it with nothing.
+    let remote = null;
+    if (myId()) { try { const s = await DB.doc("attendees/" + myId()).get(); if (s.exists) remote = s.data(); } catch (e) {} }
+    if (remote) { adoptRemote(remote); lastPushed = remote.updated || ""; }
+    else if (me?.name) pushNow();   // joined before the store was reachable
   }
+  if (USER && !me?.name) { try { suggestedName = await USER.name(); } catch (e) {} }
   render();
+}
+let suggestedName = "";
+
+/* Replace this browser's plan with the shared copy of it. */
+function adoptRemote(row) {
+  plan = new Set(row.plan || []); lsSet(K.plan, [...plan]);
+  Object.assign(chosen, row.slots || {}); lsSet(K.slots, chosen);
+  me = {id: myId(), name: row.name || me?.name || ""}; lsSet(K.me, me);
+  if (profile) rank();
+}
+let lastPushed = "";
+
+/* This browser joined under a random local id before the page could verify
+   who you are. Move that row and your notes onto the verified id, once. */
+async function adoptVerifiedId() {
+  const old = me.id;
+  try {
+    const mine = (await DB.collection("notes").where("by", "==", old).get()).docs;
+    for (const d of mine) {
+      const n = d.data();
+      await DB.doc(`notes/${n.code}__${uid}`).set({...n, by:uid});
+      await DB.doc(`notes/${d.id}`).delete();
+    }
+    const held = (await DB.collection("claims").where("by", "==", old).get()).docs;
+    for (const d of held) await DB.doc(`claims/${d.id}`).set({...d.data(), by:uid});
+    await DB.doc("attendees/" + old).delete();
+  } catch (e) { dbError = e?.code || "error"; }
+  me = {...me, id:uid}; lsSet(K.me, me);
 }
 
 function planDoc() {
-  return {name: me.name, plan: [...plan], updated: new Date().toISOString(),
+  const slots = {};
+  plan.forEach(c => { const r = SESS.get(c), sl = r && committedSlot(r); if (sl) slots[c] = slotKey(sl); });
+  return {name: me.name, plan: [...plan], slots, updated: new Date().toISOString(),
           topics: profile?.tp || [], areas: profile?.ai || []};
 }
 
@@ -98,10 +193,11 @@ function planDoc() {
    set() can resolve from the local cache before the server has confirmed, so a
    resolved promise is not evidence the row persisted — only a read-back is. */
 async function pushNow() {
-  if (!DB || !me?.id) return false;
-  const ref = DB.doc("attendees/" + me.id);
+  if (!DB || !me?.name || !myId()) return false;
+  const ref = DB.doc("attendees/" + myId());
+  const body = planDoc();
   try {
-    await ref.set(planDoc());
+    await ref.set(body); lastPushed = body.updated;
   } catch (err) { dbError = err?.code || "error"; render(); return false; }
   try {
     const snap = await ref.get();
@@ -113,9 +209,47 @@ async function pushNow() {
 /* Debounced mirror, for ordinary plan edits. */
 let pushT = null;
 function pushPlan() {
-  if (!DB || !me?.id) return;
+  if (!DB || !me?.name) return;
   clearTimeout(pushT);
-  pushT = setTimeout(pushNow, 600);
+  pushT = setTimeout(() => { pushT = null; pushNow(); }, 600);
+}
+
+/* ---------- coverage: one person takes each session for the team ---------- */
+/* A claim is first-come. A bare get-then-set races (both think they won), so
+   hold a short lease on the claim doc while checking and writing it. */
+async function claimSession(code, takeOver) {
+  if (!DB || !me?.name) return {ok:false, msg:"Join under Team first."};
+  const ref = DB.doc("claims/" + code);
+  try {
+    const lease = await ref.acquire({holder: myId(), ttlMs: 5000});
+    if (!lease.acquired) return {ok:false, msg:"Someone is claiming this right now — try again in a few seconds."};
+    const cur = await ref.get();
+    const by = cur.exists ? cur.data().by : null;
+    if (by && !isMe(by) && !takeOver) return {ok:false, msg:`${nameOf(by)} is already covering it.`};
+    await ref.set({code, by: myId(), at: new Date().toISOString()});
+    const back = await ref.get();
+    if (!back.exists || back.data().by !== myId()) return {ok:false, msg:"The claim did not stick — someone else may have taken it."};
+  } catch (err) { return {ok:false, msg:`${explainDb(err?.code)} (${err?.code || "error"})`}; }
+  claims.set(code, {code, by: myId()});
+  if (!plan.has(code)) { plan.add(code); savePlan(); }
+  return {ok:true, msg:"You're covering it."};
+}
+async function releaseSession(code) {
+  const c = claims.get(code);
+  if (!DB || !c || !isMe(c.by)) return {ok:false, msg:"Only the person covering it can release it."};
+  try { await DB.doc("claims/" + code).delete(); }
+  catch (err) { return {ok:false, msg:`${explainDb(err?.code)} (${err?.code || "error"})`}; }
+  claims.delete(code);
+  return {ok:true, msg:"Released — it's open for someone else."};
+}
+/* Who plans a session, with the showing each of them picked. */
+function plannersOf(code) {
+  const r = SESS.get(code);
+  return attendees.filter(a => (a.plan || []).includes(code)).map(a => {
+    const want = a.slots?.[code];
+    const slot = r && ((r.s || []).find(s => slotKey(s) === want) || (r.s || [])[0]);
+    return {a, slot};
+  });
 }
 
 /* ===================================================================
@@ -363,15 +497,26 @@ function cmpBadge(r) {
 }
 
 function alsoGoing(code) {
-  return attendees.filter(a => a.id !== me?.id && (a.plan || []).includes(code));
+  return attendees.filter(a => !isMe(a.id) && (a.plan || []).includes(code));
 }
 
 function metaRow(r) {
   const bits = [r.y, r.l];
   const others = alsoGoing(r.c);
   if (others.length) bits.push(others.length + " going");
+  const c = claims.get(r.c);
+  if (c) bits.push(isMe(c.by) ? "You cover" : "Covered · " + nameOf(c.by));
   return bits;
 }
+
+/* The badge that says who is covering a session for the team. */
+function coverBadge(code) {
+  const c = claims.get(code);
+  if (!c) return "";
+  return isMe(c.by) ? '<span class="cover me">You cover</span>'
+                    : `<span class="cover">Covered · ${esc(nameOf(c.by))}</span>`;
+}
+const durLabel = sl => sl.endEst ? "end TBA · ~" + (sl.endMin - sl.startMin) + " min" : (sl.endMin - sl.startMin) + " min";
 
 function tile(x) {
   const r = x.r, on = plan.has(r.c), lc = r.pick ? `var(--t-${r.pick.track})` : "var(--accent)";
@@ -450,12 +595,13 @@ function slotRow(row, clash) {
   const lc = r.pick ? `var(--t-${r.pick.track})` : "var(--accent)";
   return `<div class="slotrow${on && !alt ? " on" : ""}" style="--lc:${lc}${alt?";opacity:.55":""}">
     <div class="when"><b>${esc(slot.start)}</b><span>&rarr; ${esc(slot.end)}</span>
-      <span class="dur">${slot.endMin-slot.startMin} min</span></div>
+      <span class="dur">${esc(durLabel(slot))}</span></div>
     <div class="what">
       <div class="c-top"><span class="code">${esc(r.c)}</span><span class="lvl">${esc(r.l)}</span>
         ${r.pick?.tier===1 ? '<span class="star">Core</span>' : ""}${cmpBadge(r)}
         ${alt ? '<span class="rpt">Alternate showing</span>' : ""}
-        ${clash && !alt ? '<span class="clash">Clash</span>' : ""}</div>
+        ${clash && !alt ? '<span class="clash">Clash</span>' : ""}${coverBadge(r.c)}
+        ${alsoGoing(r.c).length ? `<span class="tag">${alsoGoing(r.c).length} teammate${alsoGoing(r.c).length>1?"s":""} going</span>` : ""}</div>
       <h4>${esc(r.t)}</h4>
       ${slot.room ? `<div class="where">${esc(slot.room)}</div>` : ""}
       <div class="rowfoot"><span class="tag">${esc(r.y)}</span>
@@ -532,134 +678,424 @@ function pendingPanel() {
   </div>`;
 }
 
-/* ---------- people ---------- */
-function renderPeople() {
+/* ---------- team ---------- */
+let flash = null;              // {text, ok} — the result of the last coverage action
+let confirmTake = null;        // code awaiting a second click to take over
+
+function coverActions(code, compact) {
+  const c = claims.get(code);
+  const inPlan = plan.has(code);
+  const b = (attr, label, ghost) =>
+    `<button class="${compact ? "plan" : "btn" + (ghost ? " ghost" : "")}" type="button" ${attr}="${esc(code)}">${label}</button>`;
+  if (!me?.name) return "";
+  if (!c) return b("data-claim", "I'll cover it");
+  if (isMe(c.by)) return b("data-release", "Release", true);
+  return (inPlan ? b("data-drop", "Drop mine", true) : "")
+    + (confirmTake === code ? b("data-takeover", "Confirm take over") : b("data-asktake", "Take over", true));
+}
+
+function renderTeam() {
   const status =
     dbError ? `<span class="msg err">${esc(explainDb(dbError))} (${esc(dbError)}) Your plan is still saved locally — use <b>Share</b> to compare by code.</span>`
+    : feedError ? `<span class="msg err">Live updates stopped (${esc(feedError)}). Reload the page to reconnect.</span>`
     : dbState === "connecting" ? `<span class="msg">Connecting to the shared store…</span>`
     : dbState === "unavailable" ? `<span class="msg">Shared mode is unavailable in this view — your plan stays local.</span>`
-    : me?.name ? `<span class="msg ok">Joined as ${esc(me.name)} — write confirmed. The shared store currently lists ${attendees.length} ${attendees.length===1?"person":"people"}.</span>`
-    : `<span class="msg">Connected. Add a name to share your plan.</span>`;
-  const diag = `dbState=${dbState} err=${dbError||"none"} attendees=${attendees.length} `
-             + `me=${me?.id||"unset"} sample=${SAMPLE?"y":"n"} dl=${DL?"y":"n"} `
-             + `use=${typeof window.claude?.use === "function" ? "y":"n"}`;
+    : me?.name ? `<span class="msg ok">Joined as ${esc(nameOf(myId(), me.name))} — write confirmed. ${attendees.length} ${attendees.length===1?"person":"people"} on the team.</span>`
+    : `<span class="msg">Connected. Join to share your plan with the team.</span>`;
+  const diag = `dbState=${dbState} err=${dbError||"none"} feed=${feedError||"ok"} attendees=${attendees.length} `
+             + `claims=${claims.size} notes=${[...notesByCode.values()].flat().length} `
+             + `me=${me?.id ? (uid ? "verified" : "local") : "unset"} user=${USER?"y":"n"} `
+             + `sample=${SAMPLE?"y":"n"} dl=${DL?"y":"n"} use=${typeof window.claude?.use === "function" ? "y":"n"} `
+             + `jsErr=${lastError || "none"}`;
   const diagBar = `<div class="namebar" style="border-left-color:var(--faint)">
       <span class="msg" style="flex:1 1 auto;word-break:break-all">Diagnostics: ${esc(diag)}</span>
       <button class="btn ghost" id="copyDiag" type="button">Copy</button></div>`;
   const nameBar = `<div class="namebar">
     <label class="field" style="flex:1 1 200px"><span>Your name on this page</span>
-      <input id="myName" maxlength="40" placeholder="e.g. Caleb" value="${esc(me?.name||"")}"></label>
+      <input id="myName" maxlength="40" placeholder="e.g. Caleb" value="${esc(me?.name || suggestedName || "")}"></label>
     <button class="btn" id="saveName" type="button">${me?.name ? "Update" : "Join"}</button>
     <span class="msg" id="nameMsg">${status}</span>
   </div>`;
+  const flashBar = flash ? `<p class="msg ${flash.ok ? "ok" : "err"}" style="margin:-10px 0 18px">${esc(flash.text)}</p>` : "";
   if (dbState !== "ready") return nameBar + diagBar + `<p class="empty">Live sharing needs the published page. Use <b>Share</b> to exchange plan codes instead.</p>`;
-  if (!attendees.length) return nameBar + diagBar + `<p class="empty">No one has joined yet. Add your name above, then send whoever you're going with this page's link.</p>`;
+  if (!attendees.length) return nameBar + diagBar + `<p class="empty">No one has joined yet. Join above, then send whoever you're going with this page's link.</p>`;
 
-  const mineSet = plan;
+  // Every session anyone plans, with who plans it.
+  const tally = new Map();
+  attendees.forEach(a => (a.plan || []).forEach(c => { if (SESS.has(c)) tally.set(c, (tally.get(c) || 0) + 1); }));
+  const doubled = [...tally.entries()].filter(([, n]) => n > 1).map(([c]) => c)
+    .sort((a, b) => (claims.has(a) - claims.has(b)) || tally.get(b) - tally.get(a) || a.localeCompare(b));
+  const open = doubled.filter(c => !claims.has(c)).length;
+
+  const stats = `<div class="teamstats">
+    <div><b>${attendees.length}</b><span>people</span></div>
+    <div><b>${tally.size}</b><span>sessions planned</span></div>
+    <div><b>${claims.size}</b><span>covered</span></div>
+    <div class="${open ? "warn" : ""}"><b>${doubled.length}</b><span>doubled up · ${open} unassigned</span></div></div>`;
+
+  const dupRows = doubled.map(c => {
+    const r = SESS.get(c), who = plannersOf(c);
+    const sameSlot = new Set(who.map(w => w.slot && slotKey(w.slot))).size === 1;
+    return `<div class="duprow">
+      <div class="what"><div class="c-top"><span class="code" style="color:var(--accent)">${esc(c)}</span>
+        <span class="lvl">${esc(r.l)}</span>${coverBadge(c) || '<span class="cover open">Unassigned</span>'}</div>
+        <h4>${esc(r.t)}</h4>
+        <div class="who">${who.map(w => `<span class="pchip${isMe(w.a.id) ? " me" : ""}">${esc(nameOf(w.a.id, w.a.name))}${
+          w.slot ? ` · ${esc(w.slot.dayName.slice(0,3))} ${esc(w.slot.start)}` : ""}</span>`).join("")}
+          <span class="msg">${sameSlot ? "same showing" : "different showings"}</span></div></div>
+      <div class="acts">${coverActions(c)}<button class="btn ghost" type="button" data-open="${esc(c)}">Notes</button></div>
+    </div>`;
+  }).join("");
+
   const cards = attendees.map(a => {
     const theirs = new Set(a.plan || []);
-    const both = [...mineSet].filter(c => theirs.has(c));
-    const isMe = a.id === me?.id;
-    return `<div class="person${isMe?" me":""}">
-      <h4>${esc(a.name || "Unnamed")}${isMe ? " (you)" : ""}</h4>
-      <span class="stat"><b>${theirs.size}</b> sessions planned</span>
-      ${!isMe ? `<div class="overlap"><span class="stat"><b>${both.length}</b> in common with you</span>
+    const both = [...plan].filter(c => theirs.has(c));
+    const covering = [...claims.values()].filter(c => c.by === a.id).length;
+    const mine = isMe(a.id);
+    return `<div class="person${mine ? " me" : ""}">
+      <h4>${esc(nameOf(a.id, a.name))}${mine ? " (you)" : ""}</h4>
+      <span class="stat"><b>${theirs.size}</b> planned &middot; <b>${covering}</b> covering</span>
+      ${!mine ? `<div class="overlap"><span class="stat"><b>${both.length}</b> in common with you</span>
         ${both.length ? `<div class="why" style="margin-top:5px">${both.slice(0,6).map(esc).join(", ")}${both.length>6?` +${both.length-6}`:""}</div>` : ""}</div>` : ""}
     </div>`;
   }).join("");
 
-  // Sessions where two or more people overlap
-  const tally = new Map();
-  attendees.forEach(a => (a.plan||[]).forEach(c => tally.set(c, (tally.get(c)||0)+1)));
-  const shared = [...tally.entries()].filter(([,n]) => n > 1)
-    .sort((a,b) => b[1]-a[1]).slice(0, 24)
-    .map(([c,n]) => { const r = SESS.get(c); if (!r) return "";
-      return `<button class="tile" style="--lc:var(--accent)" data-code="${esc(c)}">
-        <div class="c-top"><span class="code">${esc(c)}</span><span class="lvl">${esc(r.l)}</span>
-          <span class="fit">${n} going</span></div>
-        <h3>${esc(r.t)}</h3></button>`; }).join("");
-
-  return nameBar + diagBar + `<section class="sect" style="--lc:var(--accent)">
-    <div class="sect-head"><h2>Who's going</h2><span class="n">${attendees.length}</span></div>
-    <p class="sect-desc">Everyone who has opened this page and added a name. Plans sync live. Names are self-declared, not verified, and every plan and note here is visible to anyone who can open this page.</p>
-    <div class="people">${cards}</div></section>
-    ${shared ? `<section class="sect" style="--lc:var(--accent)">
-      <div class="sect-head"><h2>Where you overlap</h2><span class="n">${shared.length}</span></div>
-      <p class="sect-desc">Sessions more than one of you plans to attend — the ones worth splitting up or comparing notes on afterwards.</p>
-      <div class="tiles">${shared}</div></section>` : ""}`;
+  return nameBar + flashBar + stats + `
+    <section class="sect" style="--lc:var(--t-hpc)">
+      <div class="sect-head"><h2>Doubled up</h2><span class="n">${doubled.length}</span></div>
+      <p class="sect-desc">Sessions two or more of you plan to attend. Pick one person to cover each — they take the notes — and the others can drop it to free the slot for something nobody is seeing. Unassigned ones are listed first.</p>
+      ${doubled.length ? `<div class="duplist">${dupRows}</div>` : `<p class="msg ok">No overlap — nobody is doubled up.</p>`}
+    </section>
+    <section class="sect" style="--lc:var(--accent)">
+      <div class="sect-head"><h2>Who's where</h2></div>
+      <p class="sect-desc">Everyone's plan in time order, using the showing each person picked. Use it to spot a slot where the whole team is in one room.</p>
+      ${renderWhere()}
+    </section>
+    <section class="sect" style="--lc:var(--accent)">
+      <div class="sect-head"><h2>People</h2><span class="n">${attendees.length}</span></div>
+      <p class="sect-desc">Everyone who has joined. Plans, coverage and notes are visible to anyone who can open this page.</p>
+      <div class="people">${cards}</div></section>` + diagBar;
 }
+
+/* One day of the whole team's plans, time-ordered, one row per showing. */
+function renderWhere() {
+  if (!DAYS.length) return `<p class="msg">Times aren't published yet.</p>`;
+  const day = state.teamDay || DAYS[0].sort;
+  const rows = new Map();          // code@slot -> {r, slot, people:[]}
+  attendees.forEach(a => (a.plan || []).forEach(c => {
+    const hit = plannersOf(c).find(w => w.a.id === a.id);
+    if (!hit?.slot || hit.slot.daySort !== day) return;
+    const k = c + "@" + slotKey(hit.slot);
+    (rows.get(k) || rows.set(k, {r: SESS.get(c), slot: hit.slot, people: []}).get(k)).people.push(a);
+  }));
+  const list = [...rows.values()].sort((x, y) => x.slot.startMin - y.slot.startMin || x.r.c.localeCompare(y.r.c));
+  const tabs = DAYS.map(d => `<button class="daytab" data-tday="${d.sort}" aria-pressed="${day === d.sort}">${esc(d.name)}</button>`).join("");
+  const body = list.length ? list.map(x => `<div class="whererow${x.people.length > 1 ? " dup" : ""}">
+      <div class="when"><b>${esc(x.slot.start)}</b><span>${esc(VNAME[x.slot.venue] || x.slot.room || "")}</span></div>
+      <div class="what"><div class="c-top"><span class="code" style="color:var(--accent)">${esc(x.r.c)}</span>${coverBadge(x.r.c)}
+        ${x.people.length > 1 ? `<span class="clash">${x.people.length} of you</span>` : ""}</div>
+        <h4><button class="linkish" type="button" data-open="${esc(x.r.c)}">${esc(x.r.t)}</button></h4>
+        <div class="who">${x.people.map(a => `<span class="pchip${isMe(a.id) ? " me" : ""}">${esc(nameOf(a.id, a.name))}</span>`).join("")}</div></div>
+    </div>`).join("") : `<p class="msg">Nobody has anything planned this day.</p>`;
+  return `<div class="daytabs" role="group" aria-label="Choose day">${tabs}</div><div class="agenda">${body}</div>`;
+}
+
 
 /* ===================================================================
    Session drawer
    =================================================================== */
 let openCode = null;
+let covMsg = null;             // {code, text, ok} — shown in the drawer after a coverage action
+
+/* A summary being generated survives re-renders: live snapshots redraw the
+   drawer and the Notes view while Claude is still writing. */
+const live = {session:null, team:null};   // {code?, text, msg, busy}
+
+const noteStamp = ns => ns.length + "|" + ns.map(n => n.updated || "").sort().pop();
+const whenOf = sl => sl ? `${sl.dayName} ${sl.start}` : "Unscheduled";
+
+/* Summaries come back as light Markdown. Escape first, then allow only
+   headings, bold and bullets — nothing from the model becomes live HTML. */
+function mdLite(src) {
+  const out = []; let list = null;
+  const inline = t => t.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  esc(src).split("\n").forEach(line => {
+    const b = line.match(/^\s*[-*] (.*)$/);
+    if (b) { (list || (list = [])).push(`<li>${inline(b[1])}</li>`); return; }
+    if (list) { out.push(`<ul>${list.join("")}</ul>`); list = null; }
+    const h = line.match(/^#{1,4}\s+(.*)$/);
+    if (h) out.push(`<h4>${inline(h[1])}</h4>`);
+    else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  });
+  if (list) out.push(`<ul>${list.join("")}</ul>`);
+  return out.join("");
+}
+
+function summaryBlock(saved, liveS, stampNow, label) {
+  if (liveS?.text || liveS?.busy) return `<div class="summary">${liveS.text ? mdLite(liveS.text) : "Thinking…"}</div>`;
+  if (!saved) return "";
+  const stale = saved.stamp !== stampNow;
+  return `<div class="summary">${mdLite(saved.text)}</div>
+    <p class="msg${stale ? " err" : ""}" style="margin-top:6px">${esc(label)} by ${esc(nameOf(saved.by))} on ${esc((saved.at || "").slice(0,10))} from ${saved.noteCount} note${saved.noteCount === 1 ? "" : "s"}.${stale ? " Notes have changed since — regenerate to include them." : ""}</p>`;
+}
 
 function drawerHTML(code) {
   const r = SESS.get(code); if (!r) return "";
   const on = plan.has(code);
-  const mine = notesByCode.get(code)?.find(n => n.by === me?.id);
-  const others = (notesByCode.get(code) || []).filter(n => n.by !== me?.id);
+  const all = notesByCode.get(code) || [];
+  const mine = all.find(n => isMe(n.by));
+  const others = all.filter(n => !isMe(n.by));
   const going = alsoGoing(code);
   const slots = r.s || [];
+  const c = claims.get(code);
+  const saved = summaries.get(code);
+  const liveS = live.session?.code === code ? live.session : null;
+  const cov = !DB ? `<p class="msg">Coverage needs the published page.</p>`
+    : `<p>${!c ? "Nobody is covering this for the team yet."
+        : isMe(c.by) ? "<b>You're covering this</b> — your note is the team's record of it."
+        : `<b>${esc(nameOf(c.by))}</b> is covering this for the team.`}${
+        going.length ? ` Also planning it: ${going.map(a => esc(nameOf(a.id, a.name))).join(", ")}.` : ""}</p>
+      <div class="share-actions">${me?.name ? coverActions(code) : '<span class="msg">Join under <b>Team</b> to cover sessions.</span>'}
+        ${covMsg?.code === code ? `<span class="msg ${covMsg.ok ? "ok" : "err"}">${esc(covMsg.text)}</span>` : ""}</div>`;
   return `<div class="drawer-head">
       <button class="dclose" id="dClose" type="button">Close</button>
       <div class="c-top"><span class="code" style="color:${r.pick?`var(--t-${r.pick.track})`:"var(--accent)"}">${esc(r.c)}</span>
         <span class="lvl">${esc(r.l)}</span><span class="tag">${esc(r.y)}</span>
-        ${r.h ? '<span class="tag hands">Hands-on</span>' : ""}</div>
+        ${r.h ? '<span class="tag hands">Hands-on</span>' : ""}${coverBadge(code)}</div>
       <h2>${esc(r.t)}</h2>
     </div>
     <div class="dsec"><div class="share-actions">
       <button class="btn" id="dPlan" type="button">${on ? "Remove from plan" : "Add to plan"}</button>
-      ${going.length ? `<span class="msg">${going.map(a => esc(a.name)).join(", ")} also going</span>` : ""}
     </div></div>
+    <div class="dsec"><h3>Team coverage</h3>${cov}</div>
     ${r.pick ? `<div class="dsec"><h3>Why it's on the shortlist</h3><p>${esc(r.pick.note)}</p></div>` : ""}
     <div class="dsec"><h3>Abstract</h3><p>${esc(r.a)}${r.a.length>=280 ? "…" : ""}</p></div>
     ${(r.tp||[]).length || (r.ai||[]).length ? `<div class="dsec"><h3>Tagged</h3>
       <div class="chips">${[...(r.tp||[]),...(r.ai||[])].slice(0,8).map(v=>`<span class="chip">${esc(v)}</span>`).join("")}</div></div>` : ""}
     ${slots.length ? `<div class="dsec"><h3>Showings</h3>${slots.map(s => {
-        const c = isCommitted(r, s);
-        return `<p><b>${esc(s.dayName)} ${esc(s.start)}</b> — ${esc(s.room||"room TBA")}${
-          c ? ' <span class="fit" style="--lc:var(--accent)">Attending</span>'
-            : ` <button class="plan" data-move="${esc(r.c)}" data-slot="${esc(slotKey(s))}">Attend this one</button>`}</p>`;
+        const cm = on && isCommitted(r, s);
+        return `<p><b>${esc(s.dayName)} ${esc(s.start)}</b> — ${esc(s.room||"room TBA")}${s.endEst ? " · end time not published" : ""}${
+          cm ? ' <span class="fit" style="--lc:var(--accent)">Attending</span>'
+             : ` <button class="plan" type="button" data-move="${esc(r.c)}" data-slot="${esc(slotKey(s))}">Attend this one</button>`}</p>`;
       }).join("")}${slots.length>1 ? '<p style="font-size:12.5px;color:var(--muted);margin-top:6px">Repeated sessions are counted once — only the showing marked <b>Attending</b> is checked for clashes.</p>' : ""}</div>` : ""}
     <div class="dsec"><h3>Your note</h3>
-      <textarea id="dNote" rows="4" placeholder="What you want out of it, or what you took away.">${esc(mine?.text||"")}</textarea>
+      <textarea id="dNote" rows="5" placeholder="What you want out of it, or what you took away.">${esc(mine?.text||"")}</textarea>
       <div class="share-actions" style="margin-top:8px">
         <button class="btn" id="dSaveNote" type="button">Save note</button>
-        <span class="msg" id="dNoteMsg">${DB ? "" : "Notes need the published page."}</span></div>
+        <span class="msg" id="dNoteMsg">${!DB ? "Notes need the published page."
+          : mine ? `Saved ${esc((mine.updated||"").slice(0,16).replace("T"," "))} UTC. Clear the text and save to delete it.` : ""}</span></div>
     </div>
     ${others.length ? `<div class="dsec"><h3>Notes from others (${others.length})</h3>
-      ${others.map(n => `<div class="note"><div class="by">${esc(n.name||"Someone")}</div><p>${esc(n.text)}</p></div>`).join("")}
-      ${SAMPLE ? `<div class="share-actions"><button class="btn ghost" id="dSum" type="button">Summarize all notes</button>
-        <span class="msg" id="dSumMsg"></span></div><div id="dSumOut"></div>` : ""}
+      ${others.map(n => `<div class="note"><div class="by">${esc(nameOf(n.by, n.name))}</div><p>${esc(n.text)}</p></div>`).join("")}
+    </div>` : ""}
+    ${all.length >= 2 || saved ? `<div class="dsec"><h3>Summary of everyone's notes</h3>
+      ${summaryBlock(saved, liveS, noteStamp(all), "Summarized")}
+      ${canSample() && all.length >= 2 ? `<div class="share-actions" style="margin-top:8px">
+        <button class="btn ghost" id="dSum" type="button" ${liveS?.busy ? "disabled" : ""}>${saved ? "Regenerate" : "Summarize"} ${all.length} notes</button>
+        <span class="msg">${esc(liveS?.msg || "")}</span></div>` : liveS?.msg ? `<p class="msg err">${esc(liveS.msg)}</p>` : ""}
     </div>` : ""}`;
 }
 
+/* A drawer that fails to build says so instead of silently not opening. */
+function safeDrawerHTML(code) {
+  try { return drawerHTML(code); }
+  catch (e) {
+    noteError(e);
+    return `<div class="drawer-head"><button class="dclose" id="dClose" type="button">Close</button><h2>${esc(code)}</h2></div>
+      <p class="msg err">This session could not be shown: ${esc(e?.message || e)}. Copy the diagnostics line under Team and send it to Caleb.</p>`;
+  }
+}
+
 function openDrawer(code) {
-  openCode = code;
+  openCode = code; covMsg = null; confirmTake = null;
   const d = $("#drawer");
-  d.hidden = false; d.innerHTML = drawerHTML(code);
+  d.hidden = false; d.innerHTML = safeDrawerHTML(code); d.scrollTop = 0;
   requestAnimationFrame(() => { d.classList.add("on"); $("#scrim").classList.add("on"); });
-  if (DB) loadNotes(code);
 }
 function closeDrawer() {
   openCode = null;
   $("#drawer").classList.remove("on"); $("#scrim").classList.remove("on");
   setTimeout(() => { if (!openCode) $("#drawer").hidden = true; }, 220);
 }
+/* Redraw the open drawer without losing a half-written note. */
+function refreshDrawer() {
+  if (!openCode) return;
+  const box = $("#dNote"), typed = box?.value, focused = document.activeElement === box;
+  const sel = focused ? [box.selectionStart, box.selectionEnd] : null;
+  const dirty = box && typed !== box.defaultValue;
+  $("#drawer").innerHTML = safeDrawerHTML(openCode);
+  const nb = $("#dNote");
+  if (nb && dirty) nb.value = typed;
+  if (nb && focused) { nb.focus(); try { nb.setSelectionRange(...sel); } catch (e) {} }
+}
 
-async function loadNotes(code) {
-  if (!DB) return;
+/* Save — or, with empty text, delete — my note, then read it back. */
+async function saveNote(code, text) {
+  const ref = DB.doc(`notes/${code}__${myId()}`);
+  if (!text) {
+    await ref.delete();
+    if ((await ref.get()).exists) throw {code:"not_persisted"};
+    return "Deleted.";
+  }
+  await ref.set({code, by:myId(), name:me.name, text, updated:new Date().toISOString()});
+  const back = await ref.get();
+  if (!back.exists || back.data().text !== text) throw {code:"not_persisted"};
+  return "Saved.";
+}
+
+/* Codes after which this view can never summarize: hide the buttons. */
+const SAMPLE_OFF = new Set(["not_granted","sampling_disabled","not_declared","capability_disabled","capability_removed"]);
+let sampleOff = false;
+function sampleErr(err) {
+  const c = err?.code || "error";
+  if (SAMPLE_OFF.has(c)) sampleOff = true;
+  return (c === "not_granted" ? "AI access was not allowed for this page."
+    : c === "sampling_disabled" ? "AI isn't available for this account."
+    : c === "rate_limited" ? "Rate limited, or your usage limit was reached — try again later."
+    : c === "session_expired" ? "Your session expired — sign in again."
+    : c === "prompt_too_large" ? "Too much text to summarize in one go."
+    : c === "refused" ? "Claude declined to summarize these notes."
+    : c === "empty_completion" ? "Claude returned nothing — try again."
+    : "Could not summarize.") + ` (${c})`;
+}
+const canSample = () => SAMPLE && !sampleOff;
+
+async function summarizeSession(code) {
+  const all = notesByCode.get(code) || [], r = SESS.get(code);
+  live.session = {code, text:"", msg:"Thinking…", busy:true}; refreshDrawer();
+  const input = `These are notes several colleagues took on one AWS re:Invent session.\n\n`
+    + `Session ${r.c}: ${r.t}\n\n`
+    + all.map(n => `--- ${nameOf(n.by, n.name)}\n${n.text}`).join("\n\n")
+    + `\n\nWrite a short synthesis for the team: what they collectively took away, where they disagree or emphasise different things, and any concrete follow-up actions named. Three short paragraphs at most. Plain prose, no headings.`;
   try {
-    const snap = await DB.collection("notes").where("code", "==", code).get();
-    notesByCode.set(code, snap.docs.map(d => ({id:d.id, ...d.data()})));
-    if (openCode === code) {
-      const typed = $("#dNote")?.value;
-      $("#drawer").innerHTML = drawerHTML(code);
-      const box = $("#dNote");
-      if (box && typed != null && typed !== box.value) box.value = typed;
+    const {text} = await SAMPLE(input, {onText:({text}) => { live.session.text = text; refreshDrawer(); }});
+    live.session = {code, text, msg:"", busy:false};
+    try {
+      await DB.doc("summaries/" + code).set({code, text, by:myId(), at:new Date().toISOString(),
+        noteCount:all.length, stamp:noteStamp(all)});
+      live.session = null;             // the saved copy arrives via the snapshot
+    } catch (err) { live.session.msg = "Summary written but not saved for the team (" + (err?.code || "error") + ")."; }
+  } catch (err) {
+    live.session = {code, text: err?.text || "", msg: sampleErr(err), busy:false};
+  }
+  refreshDrawer();
+}
+
+/* ===================================================================
+   Notes view: every note, the end-of-conference team summary, export
+   =================================================================== */
+const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + "s")}`;
+function allNotes() { return [...notesByCode.values()].flat(); }
+
+/* Sessions that have notes, in the order they happened. */
+function notedSessions(filter) {
+  const codes = [...notesByCode.keys()].filter(c => SESS.has(c) && (notesByCode.get(c) || []).length);
+  const keep = filter === "mine" ? c => notesByCode.get(c).some(n => isMe(n.by))
+             : filter === "cover" ? c => isMe(claims.get(c)?.by) : () => true;
+  const at = c => { const r = SESS.get(c), sl = committedSlot(r); return sl ? sl.daySort + String(sl.startMin).padStart(4,"0") : "9"; };
+  return codes.filter(keep).sort((a, b) => at(a).localeCompare(at(b)) || a.localeCompare(b));
+}
+
+function renderNotes() {
+  if (dbState !== "ready") return `<p class="empty">Shared notes need the published page. Open a session and use <b>Notes</b> there once it's published.</p>`;
+  const f = state.notesFilter || "all";
+  const every = allNotes(), codes = notedSessions(f);
+  const people = new Set(every.map(n => n.by)).size;
+  const saved = summaries.get("_team");
+  const todo = [...claims.values()].filter(c => isMe(c.by) && !(notesByCode.get(c.code) || []).some(n => isMe(n.by)))
+    .map(c => c.code).filter(c => SESS.has(c));
+  const chips = [["all","All notes"],["mine","Mine"],["cover","Sessions I cover"]].map(([k,l]) =>
+    `<button class="chip" type="button" data-nf="${k}" aria-pressed="${f===k}">${l}</button>`).join("");
+  const list = codes.map(c => {
+    const r = SESS.get(c), ns = notesByCode.get(c), s = summaries.get(c);
+    return `<div class="notesess">
+      <div class="c-top"><span class="code" style="color:var(--accent)">${esc(c)}</span>
+        <span class="tag">${esc(whenOf(committedSlot(r)))}</span>${coverBadge(c)}</div>
+      <h4><button class="linkish" type="button" data-open="${esc(c)}">${esc(r.t)}</button></h4>
+      ${s ? `<div class="summary" style="margin:6px 0 8px">${mdLite(s.text)}</div>` : ""}
+      ${ns.map(n => `<div class="note"><div class="by">${esc(nameOf(n.by, n.name))}</div><p>${esc(n.text)}</p></div>`).join("")}
+    </div>`;
+  }).join("");
+  const T = live.team;
+  return `<section class="sect" style="--lc:var(--accent)">
+      <div class="sect-head"><h2>Team summary</h2><span class="n">${plural(every.length, "note")} · ${plural(codes.length, "session")} · ${plural(people, "person", "people")}</span></div>
+      <p class="sect-desc">One write-up across every note the team has taken — takeaways by theme, follow-ups and open questions. It is saved here for everyone, and says when newer notes aren't in it yet. Generating it uses your own Claude usage.</p>
+      ${summaryBlock(saved, T, noteStamp(every), "Written")}
+      <div class="share-actions" style="margin-top:10px">
+        ${canSample() ? `<button class="btn" id="tsGo" type="button" ${T?.busy || !every.length ? "disabled" : ""}>${saved ? "Regenerate" : "Write"} team summary</button>` : `<span class="msg">Summaries aren't available in this view.</span>`}
+        <button class="btn ghost" id="exCopy" type="button" ${every.length ? "" : "disabled"}>Copy as Markdown</button>
+        ${DL ? `<button class="btn ghost" id="exDl" type="button" ${every.length ? "" : "disabled"}>Download .md</button>` : ""}
+        <span class="msg" id="exMsg">${esc(T?.msg || "")}</span></div>
+      <textarea id="exOut" rows="8" readonly hidden aria-label="Notes as Markdown"></textarea>
+    </section>
+    ${todo.length ? `<div class="advice"><b>You're covering ${todo.length} session${todo.length>1?"s":""} with no note from you yet:</b>
+      ${todo.map(c => `<button class="linkish" type="button" data-open="${esc(c)}">${esc(c)}</button>`).join(", ")}</div>` : ""}
+    <section class="sect" style="--lc:var(--accent)">
+      <div class="sect-head"><h2>Notes by session</h2><div class="chips" style="margin-left:auto">${chips}</div></div>
+      ${feedError ? `<p class="msg err">Live updates stopped (${esc(feedError)}). Reload to see the latest notes.</p>` : ""}
+      ${codes.length ? list : `<p class="empty">${every.length ? "Nothing matches that filter." : "No notes yet. Open any session and write one under <b>Your note</b>."}</p>`}
+    </section>`;
+}
+
+/* Pack session blocks into prompts that fit the sample input cap. */
+async function teamSummary() {
+  const every = allNotes(), codes = notedSessions("all");
+  live.team = {text:"", msg:"Thinking…", busy:true}; render();
+  const cap = (await SAMPLE.limits().catch(() => null))?.maxPromptBytes || 60000;
+  const budget = Math.floor(cap * 0.8) - 2000;
+  const bytes = t => new TextEncoder().encode(t).length;
+  const blocks = codes.map(c => {
+    const r = SESS.get(c), cl = claims.get(c);
+    let b = `### ${c}: ${r.t}${cl ? ` (covered by ${nameOf(cl.by)})` : ""}\n`
+      + notesByCode.get(c).map(n => `- ${nameOf(n.by, n.name)}: ${n.text.replace(/\s+/g, " ")}`).join("\n");
+    while (bytes(b) > budget) b = b.slice(0, Math.floor(b.length * 0.8)) + " …[trimmed]";
+    return b;
+  });
+  const chunks = [];
+  blocks.forEach(b => { const last = chunks[chunks.length - 1];
+    if (last && bytes(last + "\n\n" + b) <= budget) chunks[chunks.length - 1] = last + "\n\n" + b; else chunks.push(b); });
+  const brief = `A team of colleagues split up the AWS re:Invent 2026 sessions between them and each took notes on the ones they attended.`;
+  const final = `Write the team's end-of-conference summary in Markdown with three sections: "Key takeaways" (grouped by theme, citing session codes), "Follow-ups" (concrete actions or things to evaluate, with who raised them), and "Open questions" (disagreements and unknowns). Be specific and brief; bullets, no preamble.`;
+  const onText = ({text}) => { live.team.text = text; const box = document.querySelector(".sect .summary"); if (box && state.view === "notes") box.innerHTML = mdLite(text); };
+  try {
+    let text;
+    if (chunks.length === 1) {
+      ({text} = await SAMPLE(`${brief}\n\nTheir notes, by session:\n\n${chunks[0]}\n\n${final}`, {onText}));
+    } else {
+      const partials = [];
+      for (let i = 0; i < chunks.length; i++) {
+        live.team.msg = `Reading notes, part ${i + 1} of ${chunks.length}…`; render();
+        const p = await SAMPLE(`${brief}\n\nHere is part ${i + 1} of ${chunks.length} of their notes:\n\n${chunks[i]}\n\nCondense this part into dense bullet points that keep every concrete takeaway, follow-up (with who raised it), disagreement and session code. These will be merged with the other parts, so no introduction.`);
+        partials.push(p.text);
+      }
+      live.team.msg = "Merging the parts…"; render();
+      ({text} = await SAMPLE(`${brief}\n\nTheir notes were condensed in ${partials.length} parts:\n\n${partials.join("\n\n---\n\n")}\n\n${final}`, {onText}));
     }
-  } catch(e) {}
+    live.team = {text, msg:"", busy:false};
+    try {
+      await DB.doc("summaries/_team").set({text, by:myId(), at:new Date().toISOString(),
+        noteCount:every.length, stamp:noteStamp(every)});
+      live.team = null;
+    } catch (err) { live.team.msg = "Summary written but not saved for the team (" + (err?.code || "error") + ")."; }
+  } catch (err) {
+    live.team = {text: err?.text || "", msg: sampleErr(err), busy:false};
+  }
+  render();
+}
+
+function notesMarkdown() {
+  const every = allNotes(), codes = notedSessions("all"), t = summaries.get("_team");
+  const lines = [`# re:Invent 2026 — team notes`, ``,
+    `Exported ${new Date().toISOString().slice(0,10)} · ${every.length} notes on ${codes.length} sessions from ${new Set(every.map(n => n.by)).size} people.`, ``];
+  if (t) lines.push(`## Team summary`, ``, `_Written ${(t.at||"").slice(0,10)} by ${nameOf(t.by)} from ${t.noteCount} notes${t.stamp !== noteStamp(every) ? " — notes have changed since" : ""}._`, ``, t.text, ``);
+  lines.push(`## Sessions`, ``);
+  codes.forEach(c => {
+    const r = SESS.get(c), sl = committedSlot(r), cl = claims.get(c), s = summaries.get(c);
+    lines.push(`### ${c} — ${r.t}`, ``, `${whenOf(sl)}${sl?.room ? " · " + sl.room : ""}${cl ? " · covered by " + nameOf(cl.by) : ""}`, ``);
+    if (s) lines.push(`**Summary:** ${s.text}`, ``);
+    notesByCode.get(c).forEach(n => lines.push(`**${nameOf(n.by, n.name)}:** ${n.text}`, ``));
+  });
+  return lines.join("\n");
 }
 
 /* ===================================================================
@@ -720,7 +1156,7 @@ function sharePanel() {
     </div>
     <div class="share-col">
       <h3>Compare with someone else</h3>
-      <p>Paste their code to overlay their picks. Shared sessions are flagged <span class="both">Both</span>. For live sharing instead, use <b>People</b>.</p>
+      <p>Paste their code to overlay their picks. Shared sessions are flagged <span class="both">Both</span>. For live sharing instead, use <b>Team</b>.</p>
       <textarea id="impIn" rows="3" placeholder="RI26-…" aria-label="Paste a schedule code"></textarea>
       <div class="share-actions"><button class="btn" id="impBtn" type="button">Compare</button>
         <span class="msg" id="impMsg"></span></div>
@@ -752,14 +1188,27 @@ function syncViewButtons() {
 }
 
 function render() {
+  // Live snapshots re-render while people type; keep what they typed.
+  const act = document.activeElement;
+  const keep = [...out.querySelectorAll("input[id], textarea[id]")]
+    .filter(el => el.value !== el.defaultValue).map(el => [el.id, el.value]);
+  const focus = act && out.contains(act) && act.id
+    ? {id: act.id, sel: [act.selectionStart, act.selectionEnd]} : null;
+
   const body = state.view === "foryou" ? renderForYou()
              : state.view === "tracks" ? renderTracks()
              : state.view === "days"   ? renderDays()
-             : renderPeople();
+             : state.view === "notes"  ? renderNotes()
+             : renderTeam();
   out.innerHTML = body;
+
+  keep.forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });
+  if (focus) { const el = document.getElementById(focus.id);
+    if (el) { el.focus(); try { el.setSelectionRange(...focus.sel); } catch (e) {} } }
+
   $("#cmpbar").innerHTML = cmpBar();
   cmpChips();
-  const nPeople = attendees.length || (me ? 1 : 0);
+  const nPeople = attendees.length || (me?.name ? 1 : 0);
   $("#tally").innerHTML = [
     [META.sessions.toLocaleString(), "published"],
     [String(plan.size), "planned"],
@@ -776,7 +1225,26 @@ function render() {
 }
 
 /* ---------- events ---------- */
+/* Coverage buttons appear in the Team view, the Days rows and the drawer. */
+async function onCoverClick(el) {
+  const code = el.dataset.claim || el.dataset.release || el.dataset.drop || el.dataset.takeover || el.dataset.asktake;
+  let res = null;
+  if (el.dataset.asktake) { confirmTake = code; }
+  else {
+    el.disabled = true; confirmTake = null;
+    if (el.dataset.claim) res = await claimSession(code, false);
+    else if (el.dataset.takeover) res = await claimSession(code, true);
+    else if (el.dataset.release) res = await releaseSession(code);
+    else if (el.dataset.drop) { plan.delete(code); savePlan(); res = {ok:true, msg:`Dropped ${code} from your plan.`}; }
+  }
+  if (res) { flash = {text: res.msg, ok: res.ok}; covMsg = {code, text: res.msg, ok: res.ok}; }
+  render(); refreshDrawer();
+}
+const COVER = "[data-claim],[data-release],[data-drop],[data-takeover],[data-asktake]";
+
 out.addEventListener("click", async e => {
+  const cov = e.target.closest(COVER);
+  if (cov) { await onCoverClick(cov); return; }
   const open = e.target.closest("[data-open]");
   if (open) { openDrawer(open.dataset.open); return; }
   const planBtn = e.target.closest("button.plan[data-code]");
@@ -786,10 +1254,33 @@ out.addEventListener("click", async e => {
   }
   const mv = e.target.closest("[data-move]");
   if (mv) { chooseSlot(mv.dataset.move, mv.dataset.slot); plan.add(mv.dataset.move); savePlan(); render(); return; }
+  const td = e.target.closest("[data-tday]");
+  if (td) { state.teamDay = td.dataset.tday; render(); return; }
   const tab = e.target.closest(".daytab");
   if (tab) { state.day = tab.dataset.d; render(); return; }
+  const nf = e.target.closest("[data-nf]");
+  if (nf) { state.notesFilter = nf.dataset.nf; render(); return; }
   if (e.target.closest("#startWiz")) { openWizard(false); return; }
   if (e.target.closest("#saveName")) { await joinAs($("#myName")?.value); return; }
+  const adopt = e.target.closest("[data-adopt]");
+  if (adopt) { await joinAs($("#myName")?.value, adopt.dataset.adopt); return; }
+  if (e.target.closest("#forceJoin")) { await joinAs($("#myName")?.value, null, true); return; }
+  if (e.target.closest("#tsGo")) { if (canSample() && !live.team?.busy) await teamSummary(); return; }
+  if (e.target.closest("#exCopy")) {
+    const md = notesMarkdown(), box = $("#exOut");
+    let ok = false;
+    try { await navigator.clipboard.writeText(md); ok = true; } catch (err) {}
+    if (!ok && box) { box.hidden = false; box.value = md; box.select(); }
+    const m = $("#exMsg"); if (m) { m.textContent = ok ? "Copied." : "Press Cmd/Ctrl+C to copy."; m.className = "msg" + (ok ? " ok" : ""); }
+    return;
+  }
+  if (e.target.closest("#exDl")) {
+    const m = $("#exMsg");
+    try { await DL.save({filename:"reinvent-2026-team-notes.md", data:notesMarkdown()});
+      if (m) { m.textContent = "Saved."; m.className = "msg ok"; } }
+    catch (err) { if (m) { m.textContent = err?.code === "declined" ? "Save cancelled." : "Could not save."; m.className = "msg err"; } }
+    return;
+  }
   if (e.target.closest("#copyDiag")) {
     const t = e.target.closest(".namebar").querySelector(".msg").textContent;
     try { await navigator.clipboard.writeText(t); e.target.textContent = "Copied"; }
@@ -805,13 +1296,28 @@ out.addEventListener("click", async e => {
   }
 });
 
-async function joinAs(raw) {
+/* Join, or rename. Without a verified identity the page cannot tell a second
+   device from a second person, so a name that is already taken asks which. */
+async function joinAs(raw, adoptId, force) {
   const v = (raw || "").trim().slice(0, 40);
   const msg = $("#nameMsg");
-  if (!v) { if (msg) { msg.textContent = "Enter a name first."; msg.className = "msg err"; } return; }
-  me = {id: me?.id || ("u" + Math.random().toString(36).slice(2,10)), name: v};
+  const say = (html, cls) => { if (msg) { msg.innerHTML = html; msg.className = "msg " + (cls || ""); } };
+  if (!v) return say("Enter a name first.", "err");
+  if (!uid && !me?.id && !adoptId && !force) {
+    const twin = attendees.find(a => (a.name || "").trim().toLowerCase() === v.toLowerCase());
+    if (twin) return say(`“${esc(twin.name)}” has already joined. Is that you on another device?
+      <button class="plan" type="button" data-adopt="${esc(twin.id)}">Yes, that's me</button>
+      <button class="plan" type="button" id="forceJoin">No, someone else</button>`);
+  }
+  if (adoptId) {
+    const row = attendees.find(a => a.id === adoptId);
+    me = {id: adoptId, name: row?.name || v}; lsSet(K.me, me);
+    if (row) adoptRemote(row);
+    render(); return;
+  }
+  me = {id: uid || me?.id || ("u" + Math.random().toString(36).slice(2,10)), name: v};
   lsSet(K.me, me);
-  if (msg) { msg.textContent = "Saving…"; msg.className = "msg"; }
+  say("Saving…");
   const ok = await pushNow();
   render();
   const m2 = $("#nameMsg");
@@ -832,49 +1338,43 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && openCode) 
 
 $("#drawer").addEventListener("click", async e => {
   if (e.target.id === "dClose") return closeDrawer();
+  const cov = e.target.closest(COVER);
+  if (cov) { await onCoverClick(cov); return; }
+  const mv = e.target.closest("[data-move]");
+  if (mv) {
+    chooseSlot(mv.dataset.move, mv.dataset.slot); plan.add(mv.dataset.move);
+    savePlan(); refreshDrawer(); render(); return;
+  }
   if (e.target.id === "dPlan") {
     plan.has(openCode) ? plan.delete(openCode) : plan.add(openCode);
-    savePlan(); $("#drawer").innerHTML = drawerHTML(openCode); render(); return;
+    savePlan(); refreshDrawer(); render(); return;
   }
   if (e.target.id === "dSaveNote") {
-    const msg = $("#dNoteMsg"), text = ($("#dNote")?.value || "").trim();
+    const msg = $("#dNoteMsg"), box = $("#dNote"), text = (box?.value || "").trim();
+    const had = (notesByCode.get(openCode) || []).some(n => isMe(n.by));
     if (!DB) { msg.textContent = "Notes need the published page."; return; }
-    if (!me?.name) { msg.textContent = "Add your name under People first."; return; }
-    if (!text) { msg.textContent = "Nothing to save."; return; }
-    msg.textContent = "Saving…";
+    if (!me?.name) { msg.textContent = "Join under Team first."; return; }
+    if (!text && !had) { msg.textContent = "Nothing to save."; return; }
+    msg.textContent = "Saving…"; msg.className = "msg"; e.target.disabled = true;
+    const code = openCode;
     try {
-      await DB.doc(`notes/${openCode}__${me.id}`).set(
-        {code:openCode, by:me.id, name:me.name, text, updated:new Date().toISOString()});
-      await loadNotes(openCode);
-      const m2 = $("#dNoteMsg"); if (m2) { m2.textContent = "Saved."; m2.className = "msg ok"; }
-    } catch(err) { msg.textContent = "Could not save (" + (err.code||"error") + ")."; }
+      const done = await saveNote(code, text);
+      if (box) box.defaultValue = text;       // no longer a draft
+      const m2 = $("#dNoteMsg"); if (m2 && openCode === code) { m2.textContent = done; m2.className = "msg ok"; }
+    } catch (err) {
+      const m2 = $("#dNoteMsg");
+      if (m2) { m2.textContent = `Not saved — ${explainDb(err?.code)} (${err?.code || "error"}). Your text is still in the box.`; m2.className = "msg err"; }
+    } finally { const b = $("#dSaveNote"); if (b) b.disabled = false; }
     return;
   }
   if (e.target.id === "dSum") {
-    const msg = $("#dSumMsg"), box = $("#dSumOut");
-    const all = notesByCode.get(openCode) || [];
-    if (!SAMPLE || all.length < 2) { msg.textContent = "Need at least two notes."; return; }
-    e.target.disabled = true; msg.textContent = "Thinking…";
-    const r = SESS.get(openCode);
-    const input = `These are notes several colleagues took on one AWS re:Invent session.\n\n`
-      + `Session ${r.c}: ${r.t}\n\n`
-      + all.map(n => `--- ${n.name || "Anonymous"}\n${n.text}`).join("\n\n")
-      + `\n\nWrite a short synthesis for the team: what they collectively took away, where they disagree or emphasise different things, and any concrete follow-up actions named. Three short paragraphs at most. Plain prose, no headings.`;
-    try {
-      const {text} = await SAMPLE(input, {onText:({text}) => { box.innerHTML = `<div class="summary">${esc(text)}</div>`; }});
-      box.innerHTML = `<div class="summary">${esc(text)}</div>`;
-      msg.textContent = `Synthesised from ${all.length} notes.`;
-    } catch(err) {
-      msg.textContent = err.code === "not_granted" ? "You declined AI access."
-        : err.code === "rate_limited" ? "Rate limited — try again shortly." : "Could not summarize.";
-      if (err.text) box.innerHTML = `<div class="summary">${esc(err.text)}</div>`;
-    } finally { e.target.disabled = false; }
+    if (canSample() && (notesByCode.get(openCode) || []).length >= 2 && !live.session?.busy) await summarizeSession(openCode);
   }
 });
 
 document.querySelector(".vtog").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  state.view = b.dataset.v; syncViewButtons(); render();
+  state.view = b.dataset.v; flash = null; syncViewButtons(); render();
 });
 function onFilterChip(e) {
   const b = e.target.closest(".chip"); if (!b) return;

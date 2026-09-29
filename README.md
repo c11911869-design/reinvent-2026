@@ -12,15 +12,19 @@ catalog and published as an Artifact.
 - **Onboarding.** Five questions built from the catalog's own facet tags (topic,
   area of interest, role, industry, level, format). Your answers score all
   published sessions and build the **For you** page.
-- **Curated.** 97 hand-picked sessions across 8 tracks, each with commentary,
+- **Curated.** 92 hand-picked sessions across 8 tracks, each with commentary,
   weighted up in the ranking.
 - **Days.** Your plan in time order per conference day, with **travel checks**
   between consecutive sessions, clash flags, and advice on which of two
   overlapping sessions to keep — plus one-click moves to an alternate showing.
-- **People.** Everyone who opens the page and adds a name. Plans sync live;
-  see who overlaps with you and where.
-- **Notes.** Per-session notes shared across the group, with an AI synthesis
-  across everyone's notes for a session.
+- **Team.** Everyone who joins. Plans sync live. **Doubled up** lists sessions
+  two or more people plan; one person claims each ("I'll cover it") and the
+  rest can drop it. **Who's where** shows the whole team's day in time order,
+  using the showing each person picked.
+- **Notes.** Per-session notes shared across the group (clear the text and save
+  to delete). A saved AI summary per session, and an end-of-conference **team
+  summary** across every note — chunked to fit the model's input cap, saved for
+  everyone, flagged stale when notes change. Export all of it as Markdown.
 - **Share.** Offline fallback: export a `RI26-…` plan code and compare by paste.
 
 ## Running it
@@ -31,6 +35,9 @@ No dependencies — standard library only.
 python3 build.py              # fetch the catalog, rebuild dist/
 python3 build.py --offline    # rebuild from data/ without network
 ```
+
+Lightning talks that publish end == start get an estimated 20-minute end
+(`endEst`) so they still take part in clash checks.
 
 `dist/reinvent-2026-planner.html` is the file to publish. Regenerating it does
 **not** update the published Artifact — ask Claude to republish it to the URL
@@ -48,18 +55,25 @@ above (passing that URL, so it updates in place).
 | `src/page/app.js` | Application logic |
 | `data/` | Generated: `catalog.json`, `picks.json`, `meta.json` |
 | `dist/` | Generated: the publishable page |
-| `tools/make_test_build.py` | Test harness — grafts real 2025 times on and stubs `window.claude` so the schedule, travel, sharing and notes paths can be exercised locally. Never published. |
+| `tools/make_test_build.py` | Test harness — the real page plus a stub `window.claude` whose store is shared across tabs, so several simulated people (`?as=alice`, `?as=bob`) and failure modes (`&dbfail=`, `&sample=`) can be exercised locally over http. Never published. |
 
 ## Runtime capabilities
 
-The published page declares `db`, `sample`, and `downloads`.
+The published page declares `db`, `sample`, `downloads`, and
+`user` (scope `profile`).
 
 - `db` — shared plans and notes. **Declaring it makes the artifact
   organisation-internal: it cannot be shared publicly**, and everyone who can
   open it can read every plan and note on it.
-- Identities are **self-declared names, not authenticated** — the `user`
-  capability is not available on this account, so there is no verified identity
-  and no per-viewer private storage.
+- `user` — a verified account id per viewer, so the same person on a phone
+  and a laptop is one attendee with one plan. Names shown are the viewer's
+  claude.ai profile names, falling back to the name typed on joining. Where the
+  page cannot verify identity it falls back to a random id per browser and asks
+  "is that you on another device?" when a name is already taken.
+- Shared collections: `attendees/<id>` (plan + chosen showings),
+  `notes/<code>__<id>`, `claims/<code>` (who covers a session; written under a
+  short lease so two people can't both win), `summaries/<code>` and
+  `summaries/_team`.
 - `sample` — the notes synthesis. Runs on the *viewer's* Claude usage and asks
   their consent on first use.
 - `downloads` — saves the booking sheet as a file.
