@@ -26,7 +26,11 @@ catalog and published as an Artifact.
   summary** across every note — chunked to fit the model's input cap, saved for
   everyone, flagged stale when notes change. Export all of it as Markdown.
 - **Start over.** Toolbar button (two clicks): deletes your plan, survey answers and claims here and in the shared store, then reopens the survey. Your notes stay. If the shared delete fails, nothing local is wiped.
-- **Share.** Offline fallback: export a `RI26-…` plan code and compare by paste.
+- **Share / import.** Export your plan as an `RI26-…` code (it carries the showing you picked for
+  repeated sessions). Import any number of teammates' codes: tiles show who else has a session and
+  whether they're at the same showing, **Days** shows each teammate on the showing they picked, and
+  the Both / Only mine / Only theirs filters slice the overlap. Re-importing a name updates it. This
+  is how people running it locally compare; on the published page **Team** does it live.
 
 ## Running it
 
@@ -37,6 +41,11 @@ No dependencies — standard library only.
 ./run.sh --refresh            # pull the live catalog first
 ./run.sh --test               # test harness with a stub team store (?as=<name>)
 ```
+
+**Tests.** `./run.sh --test`, then open
+`http://127.0.0.1:8790/TEST-harness.html?as=selftest&reset=1&selftest=1`. The suite
+(`tools/selftest.js`) runs against the real page code and shows PASS/FAIL at the top;
+the tab title reads `PASS n/n`.
 
 Run locally, there is no shared team store: your plan stays in that browser,
 and the Team view falls back to comparing `RI26-…` plan codes.
@@ -66,6 +75,7 @@ above (passing that URL, so it updates in place).
 | `src/page/app.js` | Application logic |
 | `data/` | Generated: `catalog.json`, `picks.json`, `meta.json` |
 | `dist/` | Generated: the publishable page |
+| `tools/selftest.js` | In-page test suite, injected into the harness, runs with `?selftest=1` |
 | `tools/make_test_build.py` | Test harness — the real page plus a stub `window.claude` whose store is shared across tabs, so several simulated people (`?as=alice`, `?as=bob`) and failure modes (`&dbfail=`, `&sample=`) can be exercised locally over http. Never published. |
 
 ## Runtime capabilities

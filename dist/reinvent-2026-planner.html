@@ -240,7 +240,7 @@ footer a{color:var(--accent)}
 
 .both,.theirs{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;
   text-transform:uppercase;border-radius:2px;padding:1px 6px;white-space:nowrap;
-  max-width:16ch;overflow:hidden;text-overflow:ellipsis}
+  max-width:30ch;overflow:hidden;text-overflow:ellipsis}
 .both{background:var(--t-physical);color:var(--surface)}
 .theirs{border:1px solid var(--accent);color:var(--accent)}
 @media (max-width:560px){.share{padding:18px 16px}}
@@ -538,8 +538,16 @@ let plan = new Set(lsGet(K.plan, []));
 let profile = lsGet(K.prof, null);
 let me = lsGet(K.me, null);           // {id, name}
 let chosen = lsGet(K.slots, {});   // code -> "daySort:startMin" of the showing you'll attend
-let cmp = (() => { const r = lsGet(K.cmp, null);
-  return r && Array.isArray(r.codes) ? {name:r.name||"Imported", codes:new Set(r.codes)} : null; })();
+/* Teammates' imported plans, for comparison: [{name, codes:Set, slots:{code: slotKey}}].
+   Older pages stored a single {name, codes}; read that as a list of one. */
+const MAX_CMP = 12;
+function loadCmps(raw) {
+  const arr = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.codes) ? [raw] : []);
+  return arr.filter(x => x && Array.isArray(x.codes)).slice(0, MAX_CMP).map(x => ({
+    name: String(x.name || "Imported").slice(0, 40), codes: new Set(x.codes),
+    slots: x.slots && typeof x.slots === "object" ? x.slots : {}}));
+}
+let cmps = loadCmps(lsGet(K.cmp, null));
 
 const savePlan = () => { lsSet(K.plan, [...plan]); pushPlan(); };
 const slotKey = sl => `${sl.daySort}:${sl.startMin}`;
@@ -552,7 +560,15 @@ function committedSlot(r) {
 }
 const isCommitted = (r, sl) => committedSlot(r) === sl;
 function chooseSlot(code, key) { chosen[code] = key; lsSet(K.slots, chosen); }
-const saveCmp  = () => cmp ? lsSet(K.cmp, {name:cmp.name, codes:[...cmp.codes]}) : localStorage.removeItem(K.cmp);
+const saveCmp = () => cmps.length
+  ? lsSet(K.cmp, cmps.map(x => ({name:x.name, codes:[...x.codes], slots:x.slots})))
+  : localStorage.removeItem(K.cmp);
+const whoHas = code => cmps.filter(x => x.codes.has(code));
+/* The showing a teammate picked, falling back to the first like committedSlot. */
+function theirSlot(x, r) {
+  const all = r.s || [];
+  return all.find(sl => slotKey(sl) === x.slots[r.c]) || all[0] || null;
+}
 
 const state = {q:"", tracks:new Set(), f:new Set(), view:"foryou", day:null};
 
@@ -975,8 +991,8 @@ function matches(r) {
   if (state.f.has("hands") && !r.h) return false;
   if (state.f.has("deep") && !["400","500"].includes(r.l)) return false;
   if (state.f.has("plan") && !plan.has(r.c)) return false;
-  if (cmp) {
-    const mine = plan.has(r.c), theirs = cmp.codes.has(r.c);
+  if (cmps.length) {
+    const mine = plan.has(r.c), theirs = whoHas(r.c).length > 0;
     if (state.f.has("both") && !(mine && theirs)) return false;
     if (state.f.has("onlyMine") && !(mine && !theirs)) return false;
     if (state.f.has("onlyTheirs") && !(theirs && !mine)) return false;
@@ -989,12 +1005,25 @@ function matches(r) {
   return true;
 }
 
-function cmpBadge(r) {
-  if (!cmp) return "";
-  const mine = plan.has(r.c), theirs = cmp.codes.has(r.c);
-  if (mine && theirs) return '<span class="both">Both</span>';
-  if (theirs) return `<span class="theirs">${esc(cmp.name)}</span>`;
-  return "";
+/* Who else from your imported teammates has this session. On a tile, say
+   whether they picked the same showing as you; on a Days row (slot given),
+   name only the people attending that exact showing. */
+function cmpBadge(r, slot) {
+  let who = whoHas(r.c);
+  if (!who.length) return "";
+  const names = xs => esc(xs.map(x => x.name).join(", "));
+  if (slot) {
+    who = who.filter(x => theirSlot(x, r) === slot);
+    if (!who.length) return "";
+    return plan.has(r.c) && isCommitted(r, slot)
+      ? `<span class="both" title="${names(who)}">With ${names(who)}</span>`
+      : `<span class="theirs" title="${names(who)}">${names(who)} here</span>`;
+  }
+  if (!plan.has(r.c)) return `<span class="theirs" title="${names(who)}">${names(who)}</span>`;
+  const mineSl = committedSlot(r);
+  const same = who.filter(x => theirSlot(x, r) === mineSl), other = who.filter(x => theirSlot(x, r) !== mineSl);
+  return (same.length ? `<span class="both" title="${names(same)}">Both &middot; ${names(same)}</span>` : "")
+       + (other.length ? `<span class="theirs" title="${names(other)}">${names(other)} &middot; other showing</span>` : "");
 }
 
 function alsoGoing(code) {
@@ -1131,7 +1160,7 @@ function slotRow(row, clash) {
       <span class="dur">${esc(durLabel(slot))}</span></div>
     <div class="what">
       <div class="c-top"><span class="code">${esc(r.c)}</span><span class="lvl">${esc(r.l)}</span>
-        ${r.pick?.tier===1 ? '<span class="star">Core</span>' : ""}${cmpBadge(r)}
+        ${r.pick?.tier===1 ? '<span class="star">Core</span>' : ""}${cmpBadge(r, slot)}
         ${alt ? '<span class="rpt">Alternate showing</span>' : ""}
         ${clash && !alt ? '<span class="clash">Clash</span>' : ""}${coverBadge(r.c)}
         ${alsoGoing(r.c).length ? `<span class="tag">${alsoGoing(r.c).length} teammate${alsoGoing(r.c).length>1?"s":""} going</span>` : ""}</div>
@@ -1639,8 +1668,10 @@ const b64e = t => btoa(String.fromCharCode(...new TextEncoder().encode(t)));
 const b64d = b => new TextDecoder().decode(Uint8Array.from(atob(b), c => c.charCodeAt(0)));
 
 function encodePlan(name) {
-  const body = JSON.stringify({v:1, name:(name||"").trim().slice(0,40),
-    at:new Date().toISOString().slice(0,10), codes:[...plan].sort()});
+  const codes = [...plan].sort(), slots = {};
+  codes.forEach(c => { const r = SESS.get(c), sl = r && committedSlot(r); if (sl && (r.s || []).length > 1) slots[c] = slotKey(sl); });
+  const body = JSON.stringify({v:2, name:(name||"").trim().slice(0,40),
+    at:new Date().toISOString().slice(0,10), codes, slots});
   try { return TAG + b64e(body); } catch(e) { return body; }
 }
 function decodePlan(txt) {
@@ -1653,10 +1684,16 @@ function decodePlan(txt) {
   }
   let o; try { o = JSON.parse(body); } catch(e) { throw new Error("That isn't a schedule code."); }
   if (!Array.isArray(o.codes)) throw new Error("No sessions in that code.");
-  const valid = o.codes.filter(c => SESS.has(c));
+  const valid = [...new Set(o.codes.filter(c => typeof c === "string" && SESS.has(c)))];
   if (!valid.length) throw new Error("None of those sessions are in this catalog.");
-  return {name:(o.name||"Their plan").trim().slice(0,40) || "Their plan",
-          codes:new Set(valid), dropped:o.codes.length - valid.length};
+  // v2 codes carry the showing picked for repeated sessions; keep only real ones.
+  const slots = {};
+  if (o.slots && typeof o.slots === "object") valid.forEach(c => {
+    const k = o.slots[c];
+    if (typeof k === "string" && (SESS.get(c).s || []).some(sl => slotKey(sl) === k)) slots[c] = k;
+  });
+  return {name:String(o.name||"").trim().slice(0,40) || "Their plan",
+          codes:new Set(valid), slots, dropped:o.codes.length - valid.length};
 }
 
 function bookingSheet() {
@@ -1688,20 +1725,27 @@ function sharePanel() {
         <span class="msg" id="copyMsg"></span></div>
     </div>
     <div class="share-col">
-      <h3>Compare with someone else</h3>
-      <p>Paste their code to overlay their picks. Shared sessions are flagged <span class="both">Both</span>. For live sharing instead, use <b>Team</b>.</p>
+      <h3>Import a teammate's schedule</h3>
+      <p>Paste their code to overlay their picks — add as many teammates as you like; pasting the same name again updates them. Tiles say whether they're at the same showing as you, and <b>Days</b> shows where each of them will be. For live sharing instead, use <b>Team</b>.</p>
       <textarea id="impIn" rows="3" placeholder="RI26-…" aria-label="Paste a schedule code"></textarea>
-      <div class="share-actions"><button class="btn" id="impBtn" type="button">Compare</button>
+      <div class="share-actions"><button class="btn" id="impBtn" type="button">Import</button>
         <span class="msg" id="impMsg"></span></div>
     </div></div>`;
 }
 
+function cmpStats(x) {
+  let both = 0, same = 0;
+  plan.forEach(c => { if (!x.codes.has(c)) return; both++;
+    const r = SESS.get(c); if (r && theirSlot(x, r) === committedSlot(r)) same++; });
+  return {both, same, mineOnly: plan.size - both, theirsOnly: x.codes.size - both};
+}
 function cmpBar() {
-  if (!cmp) return "";
-  const both = [...plan].filter(c => cmp.codes.has(c)).length;
-  return `<div class="cmpbar"><span class="who">${esc(cmp.name)}</span>
-    <span class="stat"><b>${both}</b> in common &middot; <b>${plan.size-both}</b> only yours &middot; <b>${cmp.codes.size-both}</b> only theirs</span>
-    <button class="btn ghost" id="cmpOff" type="button">Stop comparing</button></div>`;
+  if (!cmps.length) return "";
+  return cmps.map((x, i) => { const st = cmpStats(x);
+    return `<div class="cmpbar"><span class="who">${esc(x.name)}</span>
+    <span class="stat"><b>${st.both}</b> in common (<b>${st.same}</b> same showing) &middot; <b>${st.mineOnly}</b> only yours &middot; <b>${st.theirsOnly}</b> only theirs</span>
+    <button class="btn ghost" data-rmcmp="${i}" type="button">Remove</button></div>`; }).join("")
+    + (cmps.length > 1 ? `<p style="margin:-12px 0 22px;text-align:right"><button class="reset" id="cmpOff" type="button">Remove all</button></p>` : "");
 }
 const syncExport = () => { const o = $("#expOut"); if (o) o.value = encodePlan($("#expName")?.value); };
 
@@ -1710,7 +1754,7 @@ const syncExport = () => { const o = $("#expOut"); if (o) o.value = encodePlan($
    =================================================================== */
 function cmpChips() {
   const box = $("#cmpChips");
-  if (!cmp) { ["both","onlyMine","onlyTheirs"].forEach(f => state.f.delete(f)); box.innerHTML = ""; return; }
+  if (!cmps.length) { ["both","onlyMine","onlyTheirs"].forEach(f => state.f.delete(f)); box.innerHTML = ""; return; }
   box.innerHTML = [["both","Both"],["onlyMine","Only mine"],["onlyTheirs","Only theirs"]]
     .map(([f,l]) => `<button class="chip" data-f="${f}" aria-pressed="${state.f.has(f)}">${l}</button>`).join("");
 }
@@ -1952,7 +1996,7 @@ $("#startOver").addEventListener("click", async () => {
   // Wipe this browser only once the shared copy is gone; otherwise the next
   // load would quietly restore the plan from the store.
   if (failed) { dbError = failed; btn.disabled = false; btn.textContent = "Start over"; render(); return; }
-  plan = new Set(); chosen = {}; profile = null; cmp = null;
+  plan = new Set(); chosen = {}; profile = null; cmps = [];
   [K.plan, K.prof, K.slots, K.cmp].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
   lastPushed = ""; dbError = "";
   btn.disabled = false; btn.textContent = "Start over";
@@ -1998,15 +2042,23 @@ panel.addEventListener("click", async e => {
   if (e.target.id === "impBtn") {
     try {
       const got = decodePlan($("#impIn").value);
-      cmp = {name:got.name, codes:got.codes}; saveCmp();
-      msg("#impMsg", `Comparing with ${got.name}.` + (got.dropped ? ` ${got.dropped} unknown skipped.` : ""), "ok");
+      const i = cmps.findIndex(x => x.name.toLowerCase() === got.name.toLowerCase());
+      if (i < 0 && cmps.length >= MAX_CMP) throw new Error(`You can compare up to ${MAX_CMP} people — remove someone first.`);
+      const entry = {name:got.name, codes:got.codes, slots:got.slots};
+      i < 0 ? cmps.push(entry) : (cmps[i] = entry); saveCmp();
+      $("#impIn").value = "";
+      msg("#impMsg", `${i < 0 ? "Added" : "Updated"} ${got.name} — ${got.codes.size} session${got.codes.size===1?"":"s"}.`
+        + (got.dropped ? ` ${got.dropped} not in this catalog, skipped.` : ""), "ok");
       render();
     } catch(err) { msg("#impMsg", err.message, "err"); }
   }
 });
 $("#cmpbar").addEventListener("click", e => {
-  if (e.target.id !== "cmpOff") return;
-  cmp = null; saveCmp();
+  const rm = e.target.closest("[data-rmcmp]");
+  if (rm) cmps.splice(Number(rm.dataset.rmcmp), 1);
+  else if (e.target.id === "cmpOff") cmps = [];
+  else return;
+  saveCmp();
   if (!panel.hidden) { panel.innerHTML = sharePanel(); syncExport(); }
   render();
 });

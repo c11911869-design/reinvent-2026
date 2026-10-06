@@ -18,6 +18,7 @@ the app's own local state. Failure switches, combinable:
     &sample=declined  sample rejects not_granted
     &cap=3000         tiny sample input cap, to force the chunked team summary
     &reset=1          wipe the shared stub store on load
+    &selftest=1       run tools/selftest.js and show PASS/FAIL at the top
 
 Never published — a test fixture only.
 """
@@ -146,7 +147,8 @@ STUB = r"""<meta charset="utf-8">
 def main():
     src = (ROOT / "dist" / "reinvent-2026-planner.html").read_text(encoding="utf-8")
     outp = ROOT / "dist" / "TEST-harness.html"
-    outp.write_text(STUB + src, encoding="utf-8")
+    tests = (ROOT / "tools" / "selftest.js").read_text(encoding="utf-8")
+    outp.write_text(STUB + src + "\n<script>\n" + tests + "\n</script>\n", encoding="utf-8")
     print(f"  wrote {outp.relative_to(ROOT)} ({outp.stat().st_size:,} bytes)")
 
 
