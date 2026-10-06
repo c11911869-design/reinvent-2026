@@ -492,7 +492,7 @@ function suggestFor(n) {
    Rendering
    =================================================================== */
 function matches(r) {
-  if (state.tracks.size && !(r.pick && state.tracks.has(r.pick.track))) return false;
+  if (state.view !== "days" && state.tracks.size && !(r.pick && state.tracks.has(r.pick.track))) return false;
   if (state.f.has("core") && r.pick?.tier !== 1) return false;
   if (state.f.has("hands") && !r.h) return false;
   if (state.f.has("deep") && !["400","500"].includes(r.l)) return false;
@@ -692,8 +692,6 @@ function gapRow(n) {
 
 function renderDays() {
   if (!DAYS.length) return pendingPanel();
-  const tabs = DAYS.map(d => `<button class="daytab" data-d="${d.sort}" aria-pressed="${state.day===d.sort}">
-    ${esc(d.name)} <span class="dn">${dayRows(d.sort).length}</span></button>`).join("");
   const rows = dayRows(state.day);
   const mine = rows.filter(x => plan.has(x.r.c) && isCommitted(x.r, x.slot));
   const notes = analyseDay(mine);
@@ -727,8 +725,7 @@ function renderDays() {
         return html + (n ? gapRow(n) : "");
       }).join("")
     : `<p class="empty">Nothing matches on this day.</p>`;
-  return `<div class="daytabs" role="group" aria-label="Choose day">${tabs}</div>${advice}
-    <div class="agenda">${body}</div>`;
+  return `${advice}<div class="agenda">${body}</div>`;
 }
 
 function pendingPanel() {
@@ -1265,6 +1262,25 @@ function cmpChips() {
     .map(([f,l]) => `<button class="chip" data-f="${f}" aria-pressed="${state.f.has(f)}">${l}</button>`).join("");
 }
 
+/* The first chip row filters by topic — except in Days, where it picks the
+   day instead (topic filters are kept, and apply again outside Days). */
+function railChips() {
+  const box = $("#trackChips");
+  if (state.view === "days" && DAYS.length) {
+    box.setAttribute("aria-label", "Choose day");
+    box.innerHTML = DAYS.map(d => {
+      const [, m, dd] = d.date.split("-").map(Number);
+      const n = dayRows(d.sort).length;
+      return `<button class="chip day" data-day="${d.sort}" aria-pressed="${state.day === d.sort}"
+        aria-label="${esc(d.name)} ${MON[m-1]} ${dd}, ${n} session${n===1?"":"s"}">${esc(d.name.slice(0,3))} ${MON[m-1]} ${dd} <span class="dn">${n}</span></button>`;
+    }).join("");
+  } else {
+    box.setAttribute("aria-label", "Filter by track");
+    box.innerHTML = TRACKS.map(([id]) =>
+      `<button class="chip t" data-t="${id}" style="--lc:var(--t-${id})" aria-pressed="${state.tracks.has(id)}">${esc(TSHORT[id])}</button>`).join("");
+  }
+}
+
 function syncViewButtons() {
   document.querySelectorAll(".vtog button").forEach(b =>
     b.setAttribute("aria-pressed", b.dataset.v === state.view));
@@ -1291,6 +1307,7 @@ function render() {
 
   $("#cmpbar").innerHTML = cmpBar();
   cmpChips();
+  railChips();
   const nPeople = attendees.length || (me?.name ? 1 : 0);
   $("#tally").innerHTML = [
     [META.sessions.toLocaleString(), "published"],
@@ -1339,8 +1356,6 @@ out.addEventListener("click", async e => {
   if (mv) { chooseSlot(mv.dataset.move, mv.dataset.slot); plan.add(mv.dataset.move); savePlan(); render(); return; }
   const td = e.target.closest("[data-tday]");
   if (td) { state.teamDay = td.dataset.tday; render(); return; }
-  const tab = e.target.closest(".daytab");
-  if (tab) { state.day = tab.dataset.d; render(); return; }
   const nf = e.target.closest("[data-nf]");
   if (nf) { state.notesFilter = nf.dataset.nf; render(); return; }
   if (e.target.closest("#startWiz")) { openWizard(false); return; }
@@ -1469,6 +1484,13 @@ $("#miscChips").addEventListener("click", onFilterChip);
 $("#cmpChips").addEventListener("click", onFilterChip);
 $("#trackChips").addEventListener("click", e => {
   const b = e.target.closest(".chip"); if (!b) return;
+  if (b.dataset.day) {
+    state.day = b.dataset.day; render();
+    // Jump back to the top of the day if you'd scrolled down the previous one.
+    const top = out.getBoundingClientRect().top + window.scrollY - ($(".rail").offsetHeight || 0) - 8;
+    if (window.scrollY > top) window.scrollTo(0, Math.max(0, top));
+    return;
+  }
   const t = b.dataset.t;
   state.tracks.has(t) ? state.tracks.delete(t) : state.tracks.add(t);
   b.setAttribute("aria-pressed", state.tracks.has(t)); render();
@@ -1570,8 +1592,6 @@ $("#cmpbar").addEventListener("click", e => {
 });
 
 /* ---------- boot ---------- */
-$("#trackChips").innerHTML = TRACKS.map(([id]) =>
-  `<button class="chip t" data-t="${id}" style="--lc:var(--t-${id})" aria-pressed="false">${esc(TSHORT[id])}</button>`).join("");
 (() => { const q = $("#q"); if (q?.dataset.ph) q.placeholder = q.dataset.ph.replace("{n}", CATALOG.length.toLocaleString()); })();
 if (profile) rank();
 render();

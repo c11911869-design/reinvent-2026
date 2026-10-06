@@ -72,6 +72,10 @@ h1{font-family:var(--disp);font-weight:800;font-size:clamp(30px,4.6vw,46px);
 .chip:hover{border-color:var(--faint);color:var(--ink)}
 .chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--ground)}
 .chip.t[aria-pressed="true"]{background:var(--lc);border-color:var(--lc);color:#fff}
+.chip.day{display:inline-flex;align-items:baseline;gap:7px}
+.chip.day .dn{font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums}
+.chip.day[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--ground)}
+.chip.day[aria-pressed="true"] .dn{color:inherit;opacity:.75}
 :root[data-theme="dark"] .chip.t[aria-pressed="true"],
 :root:not([data-theme="light"]) .chip.t[aria-pressed="true"]{color:#0D1116}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .chip.t[aria-pressed="true"]{color:#fff}}

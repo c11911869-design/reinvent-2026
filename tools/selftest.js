@@ -161,6 +161,66 @@
     eq(cmps.length, 0); eq(localStorage.getItem(K.cmp), null); eq($("#cmpChips").innerHTML, "", "chips gone");
   });
 
+  /* ---------- Days: the chip row picks the day ---------- */
+  const goView = v => { state.view = v; syncViewButtons(); render(); };
+  const railDays = () => [...document.querySelectorAll("#trackChips .chip.day")];
+  await t("Days: the topic chips become one chip per day", () => {
+    reset(); goView("days");
+    const chips = railDays();
+    eq(chips.length, DAYS.length, "day chips");
+    eq(document.querySelectorAll("#trackChips .chip.t").length, 0, "topic chips still shown");
+    ok(/^Mon Nov 30\b/.test(chips[0].textContent.trim()), chips[0].textContent);
+    eq($("#trackChips").getAttribute("aria-label"), "Choose day");
+    ok(/^Monday Nov 30, \d+ sessions$/.test(chips[0].getAttribute("aria-label")), chips[0].getAttribute("aria-label"));
+  });
+  await t("Days: exactly one chip is pressed, the current day", () => {
+    const on = railDays().filter(b => b.getAttribute("aria-pressed") === "true");
+    eq(on.map(b => b.dataset.day), [state.day]);
+  });
+  await t("Days: no duplicate day tabs above the list", () => {
+    eq(document.querySelectorAll("#out .daytab").length, 0);
+  });
+  await t("Days: clicking a chip switches the day and its sessions", async () => {
+    const target = DAYS[2].sort;
+    railDays().find(b => b.dataset.day === target).click(); await tick();
+    eq(state.day, target, "state.day");
+    eq(railDays().filter(b => b.getAttribute("aria-pressed") === "true").map(b => b.dataset.day), [target], "pressed");
+    const codes = [...document.querySelectorAll("#out .slotrow .code")].map(el => el.textContent);
+    ok(codes.length > 0, "no rows");
+    const want = dayRows(target).map(x => x.r.c);
+    eq(codes, want, "rows are that day's sessions in time order");
+  });
+  await t("Days: chip counts match the day's list and follow filters", async () => {
+    railDays().forEach(b => eq(Number(b.querySelector(".dn").textContent), dayRows(b.dataset.day).length, b.dataset.day));
+    const before = Number(railDays()[0].querySelector(".dn").textContent);
+    document.querySelector('#miscChips [data-f="hands"]').click(); await tick();
+    const after = Number(railDays()[0].querySelector(".dn").textContent);
+    ok(after < before, `Hands-on should shrink Monday (${before} → ${after})`);
+    document.querySelector('#miscChips [data-f="hands"]').click(); await tick();
+  });
+  await t("topic filters are kept but don't apply in Days", async () => {
+    goView("tracks");
+    document.querySelector('#trackChips .chip.t').click(); await tick();
+    const tr = [...state.tracks][0];
+    ok(tr, "track not selected");
+    const curated = document.querySelectorAll("#out .card").length;
+    goView("days");
+    eq(Number(railDays().find(b => b.dataset.day === state.day).querySelector(".dn").textContent),
+       dayRows(state.day).length, "count");
+    ok(dayRows(state.day).some(x => !(x.r.pick && x.r.pick.track === tr)), "Days still filtered by topic");
+    goView("tracks");
+    eq(document.querySelector(`#trackChips [data-t="${tr}"]`).getAttribute("aria-pressed"), "true", "selection lost");
+    eq(document.querySelectorAll("#out .card").length, curated, "topic filter no longer applied outside Days");
+    $("#reset").click(); await tick();
+    eq(state.tracks.size, 0, "Clear");
+  });
+  await t("Clear in Days keeps the current day selected", async () => {
+    goView("days"); const d = state.day;
+    $("#reset").click(); await tick();
+    eq(railDays().filter(b => b.getAttribute("aria-pressed") === "true").map(b => b.dataset.day), [d]);
+    goView("foryou");
+  });
+
   /* ---------- regressions: earlier features ---------- */
   await t("Start over clears plan, answers and comparisons", async () => {
     plan = new Set([A.c]); savePlan(); profile = {tp: [], ai: [], ro: [], in: [], levels: ["300"], fmt: [], hands: true};

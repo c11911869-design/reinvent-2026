@@ -14,7 +14,8 @@ catalog and published as an Artifact.
   published sessions and build the **For you** page.
 - **Curated.** 92 hand-picked sessions across 8 tracks, each with commentary,
   weighted up in the ranking.
-- **Days.** Your plan in time order per conference day, with **travel checks**
+- **Days.** Pick the day from the chip row under the view tabs (it replaces the topic chips
+  in this view, with a session count per day). Your plan in time order per conference day, with **travel checks**
   between consecutive sessions, clash flags, and advice on which of two
   overlapping sessions to keep — plus one-click moves to an alternate showing.
 - **Team.** Everyone who joins. Plans sync live. **Doubled up** lists sessions
