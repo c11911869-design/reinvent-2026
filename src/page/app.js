@@ -36,7 +36,7 @@ const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c =>
 const out = $("#out");
 
 /* ---------- local state ---------- */
-const K = {plan:"ri26.plan", prof:"ri26.profile", me:"ri26.me", cmp:"ri26.compare", slots:"ri26.slots"};
+const K = {plan:"ri26.plan", prof:"ri26.profile", me:"ri26.me", cmp:"ri26.compare", slots:"ri26.slots", book:"ri26.booking"};
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
 
@@ -44,6 +44,11 @@ let plan = new Set(lsGet(K.plan, []));
 let profile = lsGet(K.prof, null);
 let me = lsGet(K.me, null);           // {id, name}
 let chosen = lsGet(K.slots, {});   // code -> "daySort:startMin" of the showing you'll attend
+/* What happened in the AWS portal: code -> {status: "booked"|"walkup", slot}. A
+   booked seat pins the showing; "walkup" means AWS won't take a reservation. */
+let booking = lsGet(K.book, {});
+const saveBooking = () => { lsSet(K.book, booking); pushPlan(); };
+const bookStatus = code => plan.has(code) ? (booking[code]?.status || "open") : null;
 /* Teammates' imported plans, for comparison: [{name, codes:Set, slots:{code: slotKey}}].
    Older pages stored a single {name, codes}; read that as a list of one. */
 const MAX_CMP = 12;
@@ -61,7 +66,8 @@ const slotKey = sl => `${sl.daySort}:${sl.startMin}`;
 function committedSlot(r) {
   const all = r.s || [];
   if (!all.length) return null;
-  const want = chosen[r.c];
+  // A booked seat wins over the showing you'd picked.
+  const want = booking[r.c]?.status === "booked" && booking[r.c].slot ? booking[r.c].slot : chosen[r.c];
   return all.find(sl => slotKey(sl) === want) || all[0];
 }
 const isCommitted = (r, sl) => committedSlot(r) === sl;
@@ -70,7 +76,7 @@ function chooseSlot(code, key) { chosen[code] = key; lsSet(K.slots, chosen); }
    A claim you held on the one you drop is released so a teammate can take it. */
 function swapIn(dropCode, inCode, key) {
   if (inCode !== dropCode) {
-    plan.delete(dropCode); delete chosen[dropCode];
+    plan.delete(dropCode); delete chosen[dropCode]; delete booking[dropCode]; lsSet(K.book, booking);
     if (claims.get(dropCode) && isMe(claims.get(dropCode).by)) releaseSession(dropCode).then(render);
   }
   plan.add(inCode); chooseSlot(inCode, key); savePlan(); render();
@@ -184,6 +190,7 @@ let suggestedName = "";
 function adoptRemote(row) {
   plan = new Set(row.plan || []); lsSet(K.plan, [...plan]);
   Object.assign(chosen, row.slots || {}); lsSet(K.slots, chosen);
+  if (row.booking && typeof row.booking === "object") { booking = row.booking; lsSet(K.book, booking); }
   me = {id: myId(), name: row.name || me?.name || ""}; lsSet(K.me, me);
   if (profile) rank();
 }
@@ -210,7 +217,8 @@ async function adoptVerifiedId() {
 function planDoc() {
   const slots = {};
   plan.forEach(c => { const r = SESS.get(c), sl = r && committedSlot(r); if (sl) slots[c] = slotKey(sl); });
-  return {name: me.name, plan: [...plan], slots, updated: new Date().toISOString(),
+  const bk = {}; plan.forEach(c => { if (booking[c]) bk[c] = booking[c]; });
+  return {name: me.name, plan: [...plan], slots, booking: bk, updated: new Date().toISOString(),
           topics: profile?.tp || [], areas: profile?.ai || []};
 }
 
@@ -492,9 +500,12 @@ function analyseDay(rows) {
 /* For a clash, suggest which to keep and whether a repeat rescues the other. */
 function suggestFor(n) {
   const sa = scoreOf(n.A.r).score, sb = scoreOf(n.B.r).score;
-  const keep = sa >= sb ? n.A : n.B, drop = sa >= sb ? n.B : n.A;
+  // A seat you already hold is kept over a better-scoring one you don't.
+  const ba = bookStatus(n.A.r.c) === "booked", bb = bookStatus(n.B.r.c) === "booked";
+  const keepA = ba !== bb ? ba : sa >= sb;
+  const keep = keepA ? n.A : n.B, drop = keepA ? n.B : n.A;
   const alts = (drop.r.s || []).filter(s => s !== drop.slot);
-  return {keep, drop, keepScore:Math.max(sa,sb), dropScore:Math.min(sa,sb), alts};
+  return {keep, drop, keepScore: keepA ? sa : sb, dropScore: keepA ? sb : sa, keptBooked: ba !== bb, alts};
 }
 
 /* Your committed sessions on a day, in time order — whatever the view's
@@ -546,7 +557,7 @@ function fitsIn({day, prev, next, others, lo = -Infinity, hi = Infinity, allow =
   pool.forEach(r => (r.s || []).forEach(slot => {
     if (slot.daySort !== day || slot === skip) return;
     if (slot.startMin < lo || slot.endMin > hi) return;
-    if (plan.has(r.c) && r !== allow) return;
+    if (plan.has(r.c) && r.c !== allow?.c) return;
     if (prev && slot.startMin - prev.slot.endMin < needMin(prev.slot, slot) + TIGHT_MARGIN) return;
     if (next && next.slot.startMin - slot.endMin < needMin(slot, next.slot) + TIGHT_MARGIN) return;
     if (others.some(o => overlaps(o.slot, slot))) return;
@@ -614,6 +625,46 @@ function suggestionsBlock(n, mine, pool) {
   return `<details class="sugg" data-sug="${esc(key)}"${state.sugOpen.has(key) ? " open" : ""}>
     <summary>${list.length} session${list.length === 1 ? "" : "s"} fit${list.length === 1 ? "s" : ""} instead of ${esc(drop.r.c)} — ${span}${list.length > SUG_SHOWN ? `, best ${SUG_SHOWN} shown` : ""}</summary>
     <ul>${rows}</ul></details>`;
+}
+
+/* Backups for a planned session you haven't got a seat in: sessions that fit its
+   slot (within an hour, between its neighbours, travel + margin either side),
+   plus its own other showings that fit the rest of your plan. */
+function backupsFor(x, mine, pool = CATALOG) {
+  const others = mine.filter(o => o.r !== x.r);
+  const i = mine.indexOf(x);
+  const prev = [...mine.slice(0, i)].reverse().find(o => o.r !== x.r && o.slot.endMin <= x.slot.startMin) || null;
+  const next = mine.slice(i + 1).find(o => o.r !== x.r && o.slot.startMin >= x.slot.endMin) || null;
+  const here = fitsIn({day: x.slot.daySort, prev, next, others,
+    lo: x.slot.startMin - OPENING_SLACK, hi: x.slot.endMin + OPENING_SLACK, skip: x.slot, near: x.slot.startMin}, pool)
+    .filter(f => f.r !== x.r);
+  // Its other showings, on any day, checked against that day's plan.
+  const again = (x.r.s || []).filter(sl => sl !== x.slot).flatMap(sl => {
+    const day = myDay(sl.daySort).filter(o => o.r !== x.r);
+    const p = [...day].reverse().find(o => o.slot.endMin <= sl.startMin) || null;
+    const n = day.find(o => o.slot.startMin >= sl.endMin) || null;
+    return fitsIn({day: sl.daySort, prev: p, next: n, others: day, allow: x.r, near: sl.startMin}, [{...x.r, s: [sl]}])
+      .map(f => ({...f, r: x.r, slot: sl}));
+  });
+  return {here, again};
+}
+function backupsPanel(daySort, mine, pool) {
+  const open = mine.filter(x => bookStatus(x.r.c) === "open");
+  if (!open.length) return "";
+  const items = open.map(x => {
+    const {here, again} = backupsFor(x, mine, pool);
+    const key = `bk@${x.r.c}@${slotKey(x.slot)}`;
+    const rows = again.map(f => sugRow(f, `<button class="plan" type="button" data-move="${esc(x.r.c)}" data-slot="${esc(slotKey(f.slot))}">Move to this showing</button>`,
+        ` <span class="rpt">Same session, ${esc(f.slot.dayName)}</span>`))
+      .concat(here.slice(0, SUG_SHOWN).map(f => sugRow(f,
+        `<button class="plan" type="button" data-swap="${esc(x.r.c)}" data-in="${esc(f.r.c)}" data-slot="${esc(slotKey(f.slot))}">Swap for ${esc(x.r.c)}</button>`))).join("");
+    const n = again.length + here.length;
+    return `<li><b>${esc(x.r.c)}</b> ${esc(x.slot.start)} &middot; no seat yet
+      ${n ? `<details class="sugg" data-sug="${esc(key)}"${state.sugOpen.has(key) ? " open" : ""}>
+        <summary>${again.length ? `${again.length} other showing${again.length === 1 ? "" : "s"} + ` : ""}${here.length} session${here.length === 1 ? "" : "s"} for this slot${here.length > SUG_SHOWN ? `, best ${SUG_SHOWN} shown` : ""}</summary>
+        <ul>${rows}</ul></details>` : `<p class="sugg none">Nothing else fits this slot with time to get there.</p>`}</li>`;
+  }).join("");
+  return `<div class="advice backups"><b>Not booked yet.</b> Backups if you don't get a seat: other showings that fit your plan, then sessions for the same slot with travel time to spare. Mark a session <b>Booked</b> or <b>Walk-up only</b> once you know.<ul>${items}</ul></div>`;
 }
 
 /* "Open time in your plan": one collapsible list per gap. */
@@ -693,6 +744,24 @@ function metaRow(r) {
   return bits;
 }
 
+/* Your booking state for a planned session, as a badge. */
+function bookBadge(code) {
+  const st = bookStatus(code);
+  return st === "booked" ? '<span class="bk booked">Booked</span>'
+       : st === "walkup" ? '<span class="bk walkup">Walk-up</span>'
+       : st === "open" ? '<span class="bk open">Not booked</span>' : "";
+}
+/* Buttons to record what the AWS portal said, on your committed showing. */
+function bookButtons(r, slot) {
+  if (!plan.has(r.c) || !isCommitted(r, slot)) return "";
+  const st = bookStatus(r.c), k = slotKey(slot);
+  return st === "booked"
+    ? `<button class="plan" type="button" data-book="${esc(r.c)}" data-st="open">Unmark booked</button>`
+    : `<button class="plan" type="button" data-book="${esc(r.c)}" data-st="booked" data-slot="${esc(k)}">Mark booked</button>`
+      + (st === "walkup" ? `<button class="plan" type="button" data-book="${esc(r.c)}" data-st="open">Not walk-up</button>`
+                         : `<button class="plan" type="button" data-book="${esc(r.c)}" data-st="walkup">Walk-up only</button>`);
+}
+
 /* The badge that says who is covering a session for the team. */
 function coverBadge(code) {
   const c = claims.get(code);
@@ -723,7 +792,7 @@ function tile(x) {
   return `<button class="tile${on?" on":""}" style="--lc:${lc}" data-code="${esc(r.c)}">
     <div class="c-top"><span class="code">${esc(r.c)}</span><span class="lvl">${esc(r.l)}</span>
       ${r.pick?.tier===1 ? '<span class="star">Core</span>' : ""}
-      ${cmpBadge(r)}${r.h ? '<span class="tag hands">Hands-on</span>' : ""}</div>
+      ${cmpBadge(r)}${bookBadge(r.c)}${r.h ? '<span class="tag hands">Hands-on</span>' : ""}</div>
     <h3>${esc(r.t)}</h3>
     ${whenLine(r)}
     ${x.why.length ? `<p class="why">Matches <b>${x.why.map(esc).join("</b>, <b>")}</b></p>` : ""}
@@ -775,7 +844,7 @@ function card(r) {
   const on = plan.has(r.c), p = r.pick;
   return `<button class="card${p?.tier===1?" core":""}${on?" on":""}" style="--lc:var(--t-${p.track})" data-code="${esc(r.c)}">
     <div class="c-top"><span class="code">${esc(r.c)}</span><span class="lvl">${esc(r.l)}</span>
-      ${p.tier===1 ? '<span class="star">Core</span>' : ""}${cmpBadge(r)}
+      ${p.tier===1 ? '<span class="star">Core</span>' : ""}${cmpBadge(r)}${bookBadge(r.c)}
       ${r.h ? '<span class="tag hands">Hands-on</span>' : ""}${r.sp ? '<span class="tag">Sponsor</span>' : ""}</div>
     <h3 class="c-title">${esc(r.t)}</h3>
     ${whenLine(r)}
@@ -821,13 +890,13 @@ function slotRow(row, clash) {
       <div class="c-top"><span class="code">${esc(r.c)}</span><span class="lvl">${esc(r.l)}</span>
         ${r.pick?.tier===1 ? '<span class="star">Core</span>' : ""}${cmpBadge(r, slot)}
         ${alt ? '<span class="rpt">Alternate showing</span>' : ""}
-        ${clash && !alt ? '<span class="clash">Clash</span>' : ""}${coverBadge(r.c)}
+        ${clash && !alt ? '<span class="clash">Clash</span>' : ""}${on && !alt ? bookBadge(r.c) : ""}${coverBadge(r.c)}
         ${alsoGoing(r.c).length ? `<span class="tag">${alsoGoing(r.c).length} teammate${alsoGoing(r.c).length>1?"s":""} going</span>` : ""}</div>
       <h4>${esc(r.t)}</h4>
       ${slot.room ? `<div class="where">${esc(slot.room)}</div>` : ""}
       <div class="rowfoot"><span class="tag">${esc(r.y)}</span>
         ${slot.capacity ? `<span class="tag">${slot.capacity} seats</span>` : ""}
-        <button class="plan" data-code="${esc(r.c)}" aria-pressed="${on}">${on ? "In plan" : "+ Plan"}</button>
+        <button class="plan" data-code="${esc(r.c)}" aria-pressed="${on}">${on ? "In plan" : "+ Plan"}</button>${bookButtons(r, slot)}
         ${alt ? `<button class="plan" data-move="${esc(r.c)}" data-slot="${esc(slotKey(slot))}">Attend this one</button>` : ""}
         <button class="plan" data-open="${esc(r.c)}">Notes</button></div>
     </div></div>`;
@@ -866,7 +935,7 @@ function renderDays() {
           ? ` ${esc(s.drop.r.c)} runs again ${esc(s.alts[0].dayName)} ${esc(s.alts[0].start)} — <button class="plan" data-move="${esc(s.drop.r.c)}" data-slot="${esc(slotKey(s.alts[0]))}">move to it</button>`
           : ` ${esc(s.drop.r.c)} has no other showing.`;
         const sug = suggestionsBlock(n, mine);
-        if (n.overlap) return `<li><b>${esc(n.A.r.c)}</b> and <b>${esc(n.B.r.c)}</b> overlap. Your interests score ${esc(s.keep.r.c)} higher (${s.keepScore} vs ${s.dropScore}), so keep it.${alt}${sug}</li>`;
+        if (n.overlap) return `<li><b>${esc(n.A.r.c)}</b> and <b>${esc(n.B.r.c)}</b> overlap. ${s.keptBooked ? `You hold a seat in ${esc(s.keep.r.c)}, so keep it.` : `Your interests score ${esc(s.keep.r.c)} higher (${s.keepScore} vs ${s.dropScore}), so keep it.`}${alt}${sug}</li>`;
         return `<li><b>${esc(n.A.r.c)}</b> → <b>${esc(n.B.r.c)}</b> leaves ${n.gap} min for a trip that needs about ${n.travel?.minutes ?? 45}.${alt}${sug}</li>`;
       }).join("")}</ul>
       ${uniqueProblems.length > 6 ? `<p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">…and ${uniqueProblems.length-6} more. Resolve these first — each fix often clears the next.</p>` : ""}
@@ -879,7 +948,7 @@ function renderDays() {
         return html + (n ? gapRow(n) : "");
       }).join("")
     : `<p class="empty">Nothing matches on this day.</p>`;
-  return `${advice}${gapsPanel(state.day, mine)}<div class="agenda">${body}</div>`;
+  return `${advice}${backupsPanel(state.day, mine)}${gapsPanel(state.day, mine)}<div class="agenda">${body}</div>`;
 }
 
 function pendingPanel() {
@@ -1485,7 +1554,9 @@ function render() {
   const shown = state.view === "foryou" ? fyVisible().length
               : state.view === "tracks" ? CURATED.filter(matches).length : null;
   $("#count").innerHTML = (shown !== null ? `<b>${shown}</b> shown &middot; ` : "")
-    + `<b>${plan.size}</b> planned` + (META.scheduled ? ` &middot; <b>${META.scheduled}</b> scheduled` : "");
+    + `<b>${plan.size}</b> planned`
+    + (plan.size ? ` &middot; <b>${[...plan].filter(c => bookStatus(c) === "booked").length}</b> booked` : "")
+    + (META.scheduled ? ` &middot; <b>${META.scheduled}</b> scheduled` : "");
   $("#fnote").innerHTML = `Catalog pulled ${esc(META.pulled)} — ${META.catalogTotal.toLocaleString()} records, `
     + `${META.sessions.toLocaleString()} distinct sessions, ${META.scheduled} with times. `
     + `Travel estimates are mine, not AWS's; AWS advises allowing 30–45 minutes between anything. `
@@ -1524,6 +1595,10 @@ out.addEventListener("click", async e => {
   if (mv) { chooseSlot(mv.dataset.move, mv.dataset.slot); plan.add(mv.dataset.move); savePlan(); render(); return; }
   const af = e.target.closest("[data-addfit]");
   if (af) { plan.add(af.dataset.addfit); chooseSlot(af.dataset.addfit, af.dataset.slot); savePlan(); render(); return; }
+  const bkb = e.target.closest("[data-book]");
+  if (bkb) { const c = bkb.dataset.book, st = bkb.dataset.st;
+    if (st === "open") delete booking[c]; else booking[c] = {status: st, ...(bkb.dataset.slot ? {slot: bkb.dataset.slot} : {})};
+    saveBooking(); render(); return; }
   const sw = e.target.closest("[data-swap]");
   if (sw) { swapIn(sw.dataset.swap, sw.dataset.in, sw.dataset.slot); return; }
   const sum = e.target.closest("details.sugg > summary");
@@ -1708,8 +1783,8 @@ $("#startOver").addEventListener("click", async () => {
   // Wipe this browser only once the shared copy is gone; otherwise the next
   // load would quietly restore the plan from the store.
   if (failed) { dbError = failed; btn.disabled = false; btn.textContent = "Start over"; render(); return; }
-  plan = new Set(); chosen = {}; profile = null; cmps = [];
-  [K.plan, K.prof, K.slots, K.cmp].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+  plan = new Set(); chosen = {}; profile = null; cmps = []; booking = {};
+  [K.plan, K.prof, K.slots, K.cmp, K.book].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
   lastPushed = ""; dbError = "";
   btn.disabled = false; btn.textContent = "Start over";
   render();

@@ -24,6 +24,11 @@ catalog and published as an Artifact.
   leaving the walk/shuttle time plus 10 minutes (so it isn't flagged "tight"
   either). Best match first, with a one-click swap. The check runs on your whole
   day, whatever filters are on.
+  **Booking status.** Mark each planned session **Booked** (pins the showing you
+  hold), **Walk-up only**, or leave it not booked; badges show on Days and tiles,
+  the toolbar counts bookings, and a booked session is always the one kept in a
+  clash. **Not booked yet** lists backups for each open session: its other showings
+  that fit your plan, then sessions for the same slot with travel time to spare.
   **Open time in your plan** does the same for free time: before your first
   session, between each pair, and after the last, it lists sessions that fit with
   travel time plus 10 minutes either side, with one-click **Add to plan**.

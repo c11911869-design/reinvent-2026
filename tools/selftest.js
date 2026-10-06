@@ -30,7 +30,7 @@
   const singles = CATALOG.filter(r => (r.s || []).length === 1);
   const A = singles[0], B = singles[1], C = singles[2];
   const k1 = slotKey(R2.s[0]), k2 = slotKey(R2.s[1]);
-  const reset = () => { plan = new Set(); chosen = {}; cmps = []; state.f.clear(); saveCmp(); };
+  const reset = () => { plan = new Set(); chosen = {}; cmps = []; booking = {}; state.f.clear(); saveCmp(); };
   const codeFor = (name, codes, slots) => { const sv = [plan, chosen];
     plan = new Set(codes); chosen = {...(slots || {})};
     const c = encodePlan(name); [plan, chosen] = sv; return c; };
@@ -575,6 +575,121 @@
     ok(document.querySelector(".advice.freetime details").open, "closed after re-render");
   });
   reset(); profile = null; state.view = "foryou";
+
+  /* ---------- booking status and backups ---------- */
+  // The owner's real plan on 2026-10-06, with the two seats actually held then.
+  const REAL = ["IND352","AIM408","DVT409","AIM347","IND401","CON401","IND308","DVT339","INV527","AIM458-S","TNC312","INV526","IND328","IND345","AIM402"];
+  const REAL_SLOTS = {"AIM347":"20261201:720","AIM402":"20261203:480","AIM408":"20261130:510","AIM458-S":"20261202:750","CON401":"20261201:900","DVT339":"20261202:540","DVT409":"20261130:900","IND308":"20261201:810","IND328":"20261204:510","IND345":"20261204:540","IND352":"20261130:690","IND401":"20261201:960","INV526":"20261203:720","INV527":"20261202:630","TNC312":"20261202:930"};
+  const realPlan = () => { plan = new Set(REAL.filter(c => SESS.has(c))); chosen = {...REAL_SLOTS}; booking = {}; };
+  const rowFor = (code, slotStart) => [...document.querySelectorAll("#out .slotrow")].find(el =>
+    el.querySelector(".code")?.textContent === code && (!slotStart || el.querySelector(".when b")?.textContent === slotStart));
+
+  await t("fixture: the real plan is in this catalog", () => ok(REAL.filter(c => SESS.has(c)).length >= 14, "plan codes missing"));
+  await t("Mark booked records the seat, shows the badge and counts it", async () => {
+    reset(); profile = null; rank(); realPlan(); savePlan();
+    state.day = "20261202"; goView("days");
+    const row = rowFor("INV527");
+    ok(row && /Not booked/i.test(row.textContent), "INV527 should start Not booked");
+    row.querySelector('[data-book][data-st="booked"]').click(); await tick();
+    eq(booking.INV527, {status: "booked", slot: "20261202:630"});
+    ok(/Booked/.test(rowFor("INV527").querySelector(".bk").textContent), "badge");
+    ok(/1<\/b> booked|1 booked/.test($("#count").innerHTML.replace(/<b>/g, "")), $("#count").textContent);
+    eq(JSON.parse(localStorage.getItem(K.book)).INV527.status, "booked", "saved locally");
+  });
+  await t("booking is shared: it goes into your team row and comes back on another device", async () => {
+    if (!me?.name) await joinAs("Selftest");
+    await pushNow();
+    const row = __stub.store().get("attendees/" + myId());
+    eq(row.booking.INV527.status, "booked", "not in the shared row");
+    const saved = booking; booking = {};
+    adoptRemote(row);
+    eq(booking.INV527?.status, "booked", "not restored from the shared row"); booking = saved;
+  });
+  await t("a booked showing wins over the showing you'd picked", () => {
+    realPlan();
+    const r = SESS.get("AIM408"), wed = r.s.find(sl => sl.daySort === "20261202");
+    ok(wed, "no Wednesday AIM408");
+    eq(committedSlot(r).daySort, "20261130", "picked Monday");
+    booking.AIM408 = {status: "booked", slot: slotKey(wed)};
+    eq(committedSlot(r), wed, "booked Wednesday seat should win");
+  });
+  await t("in a clash, the booked session is kept even if it scores lower", () => {
+    realPlan();
+    profile = {tp: ["Artificial Intelligence"], ai: ["Agentic AI"], ro: [], in: [], levels: ["300","400"], fmt: [], hands: true}; rank();
+    const n = analyseDay(myDay("20261201")).find(x => x.overlap);
+    ok(n, "no Tuesday clash in the real plan");
+    const low = scoreOf(n.A.r).score <= scoreOf(n.B.r).score ? n.A : n.B;
+    booking[low.r.c] = {status: "booked", slot: slotKey(low.slot)};
+    const s2 = suggestFor(n);
+    eq(s2.keep.r.c, low.r.c, "booked session not kept"); ok(s2.keptBooked);
+    state.day = "20261201"; goView("days");
+    ok(new RegExp("You hold a seat in " + low.r.c).test(document.querySelector(".advice").textContent), "notice wording");
+    profile = null; rank();
+  });
+  await t("Not booked yet lists only open sessions — not booked or walk-up ones", () => {
+    realPlan(); booking.INV527 = {status: "booked", slot: "20261202:630"}; booking.TNC312 = {status: "walkup"};
+    state.day = "20261202"; goView("days");
+    const panel = document.querySelector(".advice.backups");
+    ok(panel, "no backups panel");
+    const listed = [...panel.querySelectorAll(":scope > ul > li > b")].map(b => b.textContent);
+    ok(!listed.includes("INV527") && !listed.includes("TNC312"), "lists " + listed);
+    ok(listed.includes("DVT339") && listed.includes("AIM458-S"), "missing open ones: " + listed);
+  });
+  await t("backups for a slot are exactly what fits there (brute force)", () => {
+    realPlan(); booking.INV527 = {status: "booked", slot: "20261202:630"};
+    const day = "20261202", mine = myDay(day), x = mine.find(m => m.r.c === "AIM458-S");
+    const {here} = backupsFor(x, mine);
+    const others = mine.filter(o => o.r !== x.r);
+    const prev = [...others].reverse().find(o => o.slot.endMin <= x.slot.startMin), next = others.find(o => o.slot.startMin >= x.slot.endMin);
+    const want = [];
+    CATALOG.forEach(r => (r.s || []).forEach(sl => {
+      if (sl.daySort !== day || r === x.r || plan.has(r.c)) return;
+      if (sl.startMin < x.slot.startMin - 60 || sl.endMin > x.slot.endMin + 60) return;
+      if (others.some(o => clash(o.slot, sl))) return;
+      if (prev && sl.startMin - prev.slot.endMin < need(prev.slot, sl) + 10) return;
+      if (next && next.slot.startMin - sl.endMin < need(sl, next.slot) + 10) return;
+      want.push(r.c + "@" + slotKey(sl)); }));
+    eq(here.map(f => f.r.c + "@" + slotKey(f.slot)).sort(), want.sort());
+  });
+  await t("other showings are offered only where they fit that day's plan", () => {
+    realPlan();
+    const mine = myDay("20261201"), x = mine.find(m => m.r.c === "IND308");
+    const {again} = backupsFor(x, mine);
+    ok(again.length > 0, "IND308's Friday showing should fit");
+    again.forEach(f => { ok(f.r === x.r && f.slot !== x.slot, "not its own other showing");
+      const day = myDay(f.slot.daySort).filter(o => o.r !== x.r);
+      ok(!day.some(o => clash(o.slot, f.slot)), `${f.slot.dayName} showing overlaps that day's plan`); });
+    const x2 = myDay("20261201").find(m => m.r.c === "IND401");
+    ok(!backupsFor(x2, myDay("20261201")).again.some(f => f.slot.daySort === "20261202"),
+      "IND401's Wednesday 9:00 clashes with DVT339 and must not be offered");
+  });
+  await t("Walk-up only and Unmark booked change the status", async () => {
+    realPlan(); savePlan(); state.day = "20261203"; goView("days");
+    rowFor("AIM402").querySelector('[data-book][data-st="walkup"]').click(); await tick();
+    eq(bookStatus("AIM402"), "walkup");
+    rowFor("AIM402").querySelector('[data-book][data-st="booked"]').click(); await tick();
+    eq(bookStatus("AIM402"), "booked");
+    rowFor("AIM402").querySelector('[data-book][data-st="open"]').click(); await tick();
+    eq(bookStatus("AIM402"), "open");
+  });
+  await t("tiles show Booked for a session you hold", () => {
+    realPlan(); booking.INV527 = {status: "booked", slot: "20261202:630"};
+    profile = {tp: ["Artificial Intelligence"], ai: [], ro: [], in: [], levels: [], fmt: [], hands: false}; rank();
+    ok(/Booked/.test(text(bookBadge("INV527"))) && /Not booked/.test(text(bookBadge("DVT339"))), "badges");
+    eq(bookBadge("ZZZ"), "", "unplanned sessions get no badge");
+    profile = null; rank();
+  });
+  await t("swapping a session out drops its booking; Start over clears all bookings", async () => {
+    realPlan(); booking.DVT339 = {status: "walkup"};
+    swapIn("DVT339", CATALOG.find(r => !plan.has(r.c)).c, "x");
+    ok(!booking.DVT339, "booking kept for a swapped-out session");
+    booking.INV527 = {status: "booked", slot: "20261202:630"}; lsSet(K.book, booking);
+    $("#startOver").click(); $("#startOver").click();
+    for (let i = 0; i < 40 && Object.keys(booking).length; i++) await tick(50);
+    eq(booking, {}); eq(localStorage.getItem(K.book), null);
+    $("#wizmount").innerHTML = "";
+  });
+  reset(); booking = {}; profile = null; state.view = "foryou";
 
   /* ---------- regressions: earlier features ---------- */
   await t("Start over clears plan, answers and comparisons", async () => {
