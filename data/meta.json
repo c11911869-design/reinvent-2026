@@ -1,9 +1,9 @@
 {
- "pulled": "2026-09-28",
- "catalogTotal": 2044,
- "sessions": 1604,
- "picks": 92,
- "scheduled": 1557,
+ "pulled": "2026-10-05",
+ "catalogTotal": 2169,
+ "sessions": 1685,
+ "picks": 91,
+ "scheduled": 1677,
  "days": [
   {
    "sort": "20261130",
@@ -35,59 +35,63 @@
   "tp": [
    [
     "Artificial Intelligence",
-    784
+    804
    ],
    [
     "Security & Identity",
-    265
+    273
    ],
    [
     "Architecture",
-    185
+    202
    ],
    [
     "Cloud Operations",
-    176
+    189
    ],
    [
     "Migration & Modernization",
-    170
+    173
    ],
    [
     "Business Agents",
-    149
+    158
    ],
    [
     "Developer Tools",
-    138
+    145
+   ],
+   [
+    "Compute",
+    121
    ],
    [
     "Analytics",
-    111
+    114
    ],
    [
     "Industry Solutions",
     111
    ],
    [
-    "Compute",
-    111
-   ],
-   [
     "Databases",
-    100
+    103
    ],
    [
     "Serverless",
-    90
-   ],
-   [
-    "Storage",
-    84
+    96
    ],
    [
     "Containers",
-    84
+    89
+   ],
+   [
+    "Storage",
+    87
+   ],
+   [
+    "Networking & Content Delivery",
+    75
    ],
    [
     "Application Integration",
@@ -95,116 +99,112 @@
    ],
    [
     "Hybrid Cloud & Multicloud",
-    66
-   ],
-   [
-    "Networking & Content Delivery",
-    63
+    67
    ],
    [
     "Open Source",
-    27
+    28
    ]
   ],
   "ai": [
    [
     "Agentic AI",
-    707
+    750
    ],
    [
     "Generative AI",
-    257
+    276
    ],
    [
     "Innovation & Transformation",
-    212
+    230
    ],
    [
     "Cost Optimization",
-    176
-   ],
-   [
-    "DevOps",
-    158
+    189
    ],
    [
     "Automation",
-    149
+    172
+   ],
+   [
+    "DevOps",
+    169
    ],
    [
     "Monitoring & Observability",
-    117
-   ],
-   [
-    "Resilience",
-    95
+    128
    ],
    [
     "Governance, Risk & Compliance",
-    81
+    109
    ],
    [
-    "Application Security",
-    73
+    "Resilience",
+    107
    ],
    [
     "Global Infrastructure",
-    73
+    80
+   ],
+   [
+    "Application Security",
+    78
    ],
    [
     "Machine Learning",
-    65
+    70
    ],
    [
     "Identity & Access Management",
-    59
-   ],
-   [
-    "Lambda-Based Applications",
-    55
+    66
    ],
    [
     "DevSecOps",
+    57
+   ],
+   [
+    "Lambda-Based Applications",
+    57
+   ],
+   [
+    "Data Protection",
     52
+   ],
+   [
+    "Well-Architected Framework",
+    52
+   ],
+   [
+    "Event-Driven Architecture",
+    51
+   ],
+   [
+    "Threat Detection & Incident Response",
+    51
+   ],
+   [
+    "Network & Infrastructure Security",
+    50
    ],
    [
     "Training & Certification",
     49
    ],
    [
-    "Data Protection",
-    48
-   ],
-   [
-    "Well-Architected Framework",
-    48
-   ],
-   [
-    "Event-Driven Architecture",
-    47
-   ],
-   [
-    "Network & Infrastructure Security",
-    46
-   ],
-   [
     "Management & Governance",
-    45
-   ],
-   [
-    "Threat Detection & Incident Response",
-    43
+    48
    ],
    [
     "Kubernetes",
-    43
+    44
    ],
    [
     "Responsible AI",
-    40
+    42
    ],
    [
-    "Customer Enablement",
+    "Edge Computing",
     34
    ],
    [
@@ -212,31 +212,35 @@
     33
    ],
    [
-    "Edge Computing",
-    31
+    "Customer Enablement",
+    33
    ],
    [
     "Disaster Response & Recovery",
-    27
+    30
    ],
    [
     "Open Data",
-    24
+    25
    ],
    [
-    "SaaS",
+    "Culture of Security",
+    23
+   ],
+   [
+    "VMware",
     21
    ],
    [
     "Microsoft & .NET",
-    21
-   ],
-   [
-    "VMware",
     20
    ],
    [
-    "Culture of Security",
+    "SaaS",
+    19
+   ],
+   [
+    "Front-End Web & Mobile",
     18
    ],
    [
@@ -244,12 +248,12 @@
     17
    ],
    [
-    "Front-End Web & Mobile",
+    "Learning from Amazon",
     17
    ],
    [
-    "Learning from Amazon",
-    17
+    "Zero Trust",
+    15
    ],
    [
     "Threat Intelligence",
@@ -260,15 +264,11 @@
     13
    ],
    [
-    "Digital Sovereignty",
-    11
-   ],
-   [
-    "Zero Trust",
-    11
-   ],
-   [
     "Workforce Development",
+    12
+   ],
+   [
+    "Digital Sovereignty",
     11
    ],
    [
@@ -300,7 +300,15 @@
     5
    ],
    [
+    "DNU - Serverless",
+    3
+   ],
+   [
     "Inclusion",
+    1
+   ],
+   [
+    "DNU - Containers",
     1
    ],
    [
@@ -311,81 +319,81 @@
   "ro": [
    [
     "Solution / Systems Architect",
-    742
+    817
    ],
    [
     "Developer / Engineer",
-    740
+    801
    ],
    [
     "IT Professional / Technical Manager",
-    372
+    415
    ],
    [
     "DevOps Engineer",
-    348
+    367
    ],
    [
     "IT Executive",
-    237
+    249
    ],
    [
     "Business Executive",
-    194
+    206
    ],
    [
     "Cloud Security Specialist",
-    149
+    174
    ],
    [
     "Data Engineer",
-    118
+    121
    ],
    [
     "IT Administrator",
-    84
+    96
    ],
    [
     "Academic / Researcher",
+    74
+   ],
+   [
+    "System Administrator",
     71
    ],
    [
     "Data Scientist",
-    66
-   ],
-   [
-    "System Administrator",
-    65
+    67
    ],
    [
     "Advisor / Consultant",
-    39
+    47
    ],
    [
     "Sales / Marketing",
-    29
+    34
    ],
    [
     "Tech Explorer",
-    28
+    29
    ],
    [
     "Entrepreneur (Founder/Co-Founder)",
-    24
-   ],
-   [
-    "Venture Capitalist",
-    1
+    25
    ],
    [
     "Student",
+    2
+   ],
+   [
+    "Venture Capitalist",
     1
    ]
   ],
   "in": [
    [
     "Financial Services",
-    43
+    45
    ],
    [
     "Media & Entertainment",
@@ -396,11 +404,11 @@
     18
    ],
    [
-    "Retail & Consumer Goods",
-    12
+    "Healthcare & Life Sciences",
+    13
    ],
    [
-    "Healthcare & Life Sciences",
+    "Retail & Consumer Goods",
     12
    ],
    [
@@ -409,14 +417,14 @@
    ],
    [
     "Telecommunications",
-    8
-   ],
-   [
-    "Games",
-    8
+    9
    ],
    [
     "Manufacturing & Industrial",
+    9
+   ],
+   [
+    "Games",
     8
    ],
    [
@@ -436,11 +444,15 @@
     4
    ],
    [
-    "Nonprofit",
-    1
+    "Travel & Hospitality",
+    2
    ],
    [
-    "Travel & Hospitality",
+    "Software & Internet",
+    2
+   ],
+   [
+    "Nonprofit",
     1
    ]
   ]
