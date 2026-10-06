@@ -368,6 +368,21 @@ footer a{color:var(--accent)}
 .advice b{color:var(--ink)}
 .advice ul{margin:8px 0 0;padding-left:18px}
 .advice li{margin-bottom:5px}
+.sugg{margin:7px 0 4px;border:1px solid var(--rule-soft);border-radius:3px;background:var(--surface-2)}
+.sugg summary{cursor:pointer;padding:7px 11px;font-family:var(--mono);font-size:11px;color:var(--accent);
+  list-style-position:inside}
+.sugg[open] summary{border-bottom:1px solid var(--rule-soft)}
+.sugg ul{list-style:none;margin:0;padding:0}
+.sugrow{display:grid;grid-template-columns:118px 1fr auto;gap:4px 14px;align-items:start;
+  padding:9px 11px;border-top:1px solid var(--rule-soft);margin:0}
+.sugrow:first-child{border-top:0}
+.sugwhen{font-family:var(--mono);font-size:11.5px;color:var(--ink);font-variant-numeric:tabular-nums}
+.sugwhen span{display:block;color:var(--muted);font-size:10.5px}
+.sugwhat{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;min-width:0;font-size:13px}
+.sugwhat .linkish{color:var(--ink);font-weight:600}
+.sugfit{flex-basis:100%;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.sugg.none{margin:6px 0 2px;padding:0;border:0;background:none;font-size:12.5px;color:var(--muted)}
+@media (max-width:560px){.sugrow{grid-template-columns:1fr}}
 @media (max-width:560px){.drawer{padding:0 16px 40px}.gap{margin-left:0}}
 
 @media (max-width:640px){

@@ -285,6 +285,183 @@
     eq(fyChips().length, 0); ok(document.querySelectorAll("#trackChips .chip.t").length > 0);
   });
 
+  /* ---------- Days: replacements for a clash or a too-short walk ---------- */
+  // Independent rules, written separately from the app's: travel from the
+  // campus table (or 30 min when unknown), no overlap, inside the opening.
+  const need = (a, b) => ((TRAVEL[a.venue] || {})[b.venue]?.minutes) ?? (a.venue && a.venue === b.venue ? 10 : 30);
+  const clash = (a, b) => a.startMin < b.endMin && b.startMin < a.endMin;
+  const monday = DAYS[0].sort;
+  const singlesOn = d => CATALOG.filter(r => (r.s || []).length === 1 && r.s[0].daySort === d && r.s[0].venue);
+  // A too-short walk: no overlap, but less time than the trip needs.
+  const pairWalk = (() => { const xs = singlesOn(monday);
+    for (const a of xs) for (const b of xs) { if (a === b || a.s[0].venue === b.s[0].venue) continue;
+      const gap = b.s[0].startMin - a.s[0].endMin;
+      if (gap >= 0 && gap < need(a.s[0], b.s[0])) return [a, b]; }
+    return null; })();
+  const problemsFor = codes => { plan = new Set(codes); chosen = {};
+    const mine = myDay(monday); return {mine, notes: analyseDay(mine).filter(n => n.verdict !== "ok")}; };
+  const independentValid = (n, mine) => {
+    const {keep, drop} = suggestFor(n);
+    const others = mine.filter(x => x.r !== drop.r);
+    const i = others.findIndex(x => x.r === keep.r), after = drop.slot.startMin >= keep.slot.startMin;
+    const prev = after ? keep : others[i - 1], next = after ? others[i + 1] : keep;
+    const ok1 = (r, sl) => sl.daySort === monday && sl !== drop.slot && (!plan.has(r.c) || r === drop.r)
+      && sl.startMin >= drop.slot.startMin - 60 && sl.endMin <= drop.slot.endMin + 60   // fills the hole, not another part of the day
+      && !others.some(o => clash(o.slot, sl))
+      && (!prev || sl.startMin - prev.slot.endMin >= need(prev.slot, sl) + 10)   // not even "tight"
+      && (!next || next.slot.startMin - sl.endMin >= need(sl, next.slot) + 10);
+    const all = []; CATALOG.forEach(r => (r.s || []).forEach(sl => { if (ok1(r, sl)) all.push(r.c + "@" + slotKey(sl)); }));
+    return {all, ok1, drop};
+  };
+
+  // A clash: two single-showing sessions overlapping at different venues that
+  // something else could replace (judged by the independent rules, no answers set).
+  const pairOverlap = (() => { const xs = singlesOn(monday), sv = profile; profile = null;
+    try {
+      for (const a of xs) for (const b of xs) {
+        if (a === b || a.s[0].venue === b.s[0].venue || a.s[0].startMin >= b.s[0].startMin || !clash(a.s[0], b.s[0])) continue;
+        const {mine, notes} = problemsFor([a.c, b.c]);
+        if (notes.length && independentValid(notes[0], mine).all.length >= 3) return [a, b];
+      }
+      return null;
+    } finally { profile = sv; plan = new Set(); chosen = {}; }
+  })();
+  await t("fixtures: a clash and a too-short walk exist on Monday", () => {
+    ok(pairOverlap, "no overlapping pair"); ok(pairWalk, "no short-walk pair");
+  });
+  await t("a clash gets a collapsed suggestions bar under its notice", () => {
+    reset(); profile = null; state.sugOpen.clear();
+    plan = new Set(pairOverlap.map(r => r.c)); chosen = {}; state.day = monday; goView("days");
+    const li = document.querySelector(".advice li");
+    ok(li, "no problem listed");
+    const d = li.querySelector("details.sugg");
+    ok(d, "no suggestions bar"); ok(!d.open, "should start collapsed");
+    ok(new RegExp("instead of " + pairOverlap[1].c).test(d.querySelector("summary").textContent), d.querySelector("summary").textContent);
+  });
+  await t("every suggestion fits: same day, no overlap, enough travel, not already planned", () => {
+    const {mine, notes} = problemsFor(pairOverlap.map(r => r.c));
+    const list = replacementsFor(notes[0], mine);
+    ok(list.length > 0, "nothing suggested");
+    const {ok1} = independentValid(notes[0], mine);
+    list.forEach(x => ok(ok1(x.r, x.slot), `${x.r.c} ${x.slot.start} breaks a rule`));
+  });
+  await t("suggestions are complete: nothing that fits is missed", () => {
+    const {mine, notes} = problemsFor(pairOverlap.map(r => r.c));
+    const got = replacementsFor(notes[0], mine).map(x => x.r.c + "@" + slotKey(x.slot)).sort();
+    eq(got, independentValid(notes[0], mine).all.sort());
+  });
+  await t("best matches first, five shown, the total in the summary", () => {
+    profile = {tp: ["Artificial Intelligence"], ai: ["Agentic AI"], ro: [], in: [], levels: ["300", "400"], fmt: [], hands: true}; rank();
+    const {mine, notes} = problemsFor(pairOverlap.map(r => r.c));
+    const list = replacementsFor(notes[0], mine);
+    ok(list.every((x, i) => i === 0 || list[i - 1].score >= x.score), "not ranked by score");
+    state.day = monday; goView("days");
+    const d = document.querySelector(".advice details.sugg");
+    eq(d.querySelectorAll(".sugrow").length, Math.min(5, list.length), "rows");
+    ok(d.querySelector("summary").textContent.startsWith(list.length + " session"), d.querySelector("summary").textContent);
+    eq(d.querySelector(".sugrow .code").textContent, list[0].r.c, "first row is the best");
+  });
+  await t("a too-short walk gets suggestions too", () => {
+    const {mine, notes} = problemsFor(pairWalk.map(r => r.c));
+    ok(notes.length && !notes[0].overlap, "not a travel problem");
+    const list = replacementsFor(notes[0], mine), {ok1} = independentValid(notes[0], mine);
+    list.forEach(x => ok(ok1(x.r, x.slot), x.r.c));
+    state.day = monday; goView("days");
+    ok(document.querySelector(".advice details.sugg, .advice .sugg.none"), "no suggestions block");
+  });
+  await t("the bar stays open (or closed) across re-renders", async () => {
+    plan = new Set(pairOverlap.map(r => r.c)); chosen = {}; state.day = monday; goView("days");
+    document.querySelector(".advice details.sugg summary").click(); await tick();
+    render();
+    ok(document.querySelector(".advice details.sugg").open, "closed after re-render");
+    document.querySelector(".advice details.sugg summary").click(); await tick();
+    render();
+    ok(!document.querySelector(".advice details.sugg").open, "open after closing");
+  });
+  await t("Swap replaces the dropped session and clears that problem", async () => {
+    plan = new Set(pairOverlap.map(r => r.c)); chosen = {}; savePlan(); state.day = monday; goView("days");
+    const btn = document.querySelector(".advice details.sugg .sugrow button[data-swap]");
+    const inCode = btn.dataset.in, slotK = btn.dataset.slot, dropCode = btn.dataset.swap;
+    btn.click(); await tick();
+    ok(!plan.has(dropCode), "dropped session still planned"); ok(plan.has(inCode), "replacement not planned");
+    eq(slotKey(committedSlot(SESS.get(inCode))), slotK, "wrong showing");
+    const left = analyseDay(myDay(monday)).filter(n => n.verdict !== "ok");
+    ok(!left.some(n => n.A.r.c === inCode || n.B.r.c === inCode), "replacement causes a new problem (even a tight one)");
+  });
+  await t("Swap releases a session you were covering", async () => {
+    plan = new Set(pairOverlap.map(r => r.c)); chosen = {}; savePlan();
+    const {mine, notes} = problemsFor(pairOverlap.map(r => r.c));
+    const {drop} = suggestFor(notes[0]), first = replacementsFor(notes[0], mine)[0];
+    if (!me?.name) await joinAs("Selftest");
+    const res = await claimSession(drop.r.c);
+    ok(res.ok, "claim failed: " + res.msg);
+    swapIn(drop.r.c, first.r.c, slotKey(first.slot));
+    for (let i = 0; i < 40 && claims.has(drop.r.c); i++) await tick(50);
+    ok(!claims.has(drop.r.c), "claim kept");
+  });
+  await t("a long session spanning the keeper still blocks suggestions", () => {
+    profile = null; rank();   // no answers: the earlier session is kept, the opening is after it
+    // Plan the clash plus a long session D that starts before the keeper and runs past it.
+    // D isn't the keeper's neighbour in the opening, so only the overlap rule stops
+    // suggestions from landing on top of it.
+    const [a, b] = pairOverlap;
+    const D = CATALOG.find(r => (r.s || []).length === 1 && r.s[0].daySort === monday && r !== a && r !== b
+      && r.s[0].startMin < a.s[0].startMin && r.s[0].endMin > a.s[0].endMin + 45);
+    ok(D, "no spanning session on Monday");
+    const {mine, notes} = problemsFor([a.c, b.c, D.c]);
+    const n = notes.find(x => (x.A.r === a && x.B.r === b) || (x.A.r === b && x.B.r === a)) || notes[0];
+    const got = replacementsFor(n, mine);
+    got.forEach(x => ok(!clash(x.slot, D.s[0]), `${x.r.c} ${x.slot.start} overlaps ${D.c}`));
+    eq(got.map(x => x.r.c + "@" + slotKey(x.slot)).sort(), independentValid(n, mine).all.sort(), "complete");
+  });
+  await t("a session already in your plan (another day) isn't suggested again", () => {
+    profile = null; rank();   // no answers: the earlier session is kept, the opening is after it
+    const [a, b] = pairOverlap;
+    const base = problemsFor([a.c, b.c]);
+    const {ok1} = independentValid(base.notes[0], base.mine);
+    // E: committed to a later showing on another day, with a Monday showing that would fit.
+    const E = CATALOG.find(r => r !== a && r !== b && (r.s || []).length > 1
+      && r.s.some(sl => ok1(r, sl)) && r.s.some(sl => sl.daySort !== monday));
+    ok(E, "no fixture session with a fitting Monday showing");
+    const elsewhere = E.s.find(sl => sl.daySort !== monday);
+    plan = new Set([a.c, b.c, E.c]); chosen = {[E.c]: slotKey(elsewhere)};
+    const mine = myDay(monday), n = analyseDay(mine).find(x => x.verdict !== "ok");
+    ok(!replacementsFor(n, mine).some(x => x.r === E), `${E.c} suggested though it's already planned`);
+  });
+  await t("with nothing that fits, the notice says so instead of an empty bar", () => {
+    const {mine, notes} = problemsFor(pairOverlap.map(r => r.c));
+    const html = suggestionsBlock(notes[0], mine, []);
+    ok(/No other session fits/.test(html) && !/<details/.test(html), html);
+  });
+  await t("filters can't hide a clash from the check", async () => {
+    const [a, b] = pairOverlap;
+    plan = new Set([a.c, b.c]); chosen = {}; state.day = monday; goView("days");
+    const before = document.querySelectorAll(".advice li").length;
+    state.f.add(a.h ? "deep" : "hands"); state.f.add("plan"); render();   // hide at least one of them
+    eq(document.querySelectorAll(".advice li").length, before, "problem vanished under a filter");
+    state.f.clear(); render();
+  });
+  await t("suggestions stay within an hour of the dropped session", () => {
+    profile = null; rank();
+    const {mine, notes} = problemsFor(pairOverlap.map(r => r.c));
+    const {drop} = suggestFor(notes[0]);
+    const list = replacementsFor(notes[0], mine);
+    ok(list.length > 0, "nothing suggested");
+    list.forEach(x => ok(x.slot.startMin >= drop.slot.startMin - 60 && x.slot.endMin <= drop.slot.endMin + 60,
+      `${x.r.c} ${x.slot.start}-${x.slot.end} is far from ${drop.r.c} ${drop.slot.start}`));
+    const html = suggestionsBlock(notes[0], mine);
+    ok(!/earlier in the day/.test(html) && /(after|from) .*(before|until) /.test(html), "summary should name the window");
+  });
+  await t("the import is findable: the toolbar link says Share / import", () => {
+    eq($("#share").textContent.trim(), "Share / import");
+    share(); ok(/Import a teammate's schedule/.test($("#sharepanel").textContent), "panel heading"); $("#share").click();
+  });
+  await t("unknown venue pairs need 30 minutes, not zero", () => {
+    eq(needMin({venue: "nowhere"}, {venue: "elsewhere"}), 30);
+    eq(needMin({}, {}), 30);
+  });
+  reset(); profile = null; state.view = "foryou";
+
   /* ---------- regressions: earlier features ---------- */
   await t("Start over clears plan, answers and comparisons", async () => {
     plan = new Set([A.c]); savePlan(); profile = {tp: [], ai: [], ro: [], in: [], levels: ["300"], fmt: [], hands: true};

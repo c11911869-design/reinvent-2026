@@ -368,6 +368,21 @@ footer a{color:var(--accent)}
 .advice b{color:var(--ink)}
 .advice ul{margin:8px 0 0;padding-left:18px}
 .advice li{margin-bottom:5px}
+.sugg{margin:7px 0 4px;border:1px solid var(--rule-soft);border-radius:3px;background:var(--surface-2)}
+.sugg summary{cursor:pointer;padding:7px 11px;font-family:var(--mono);font-size:11px;color:var(--accent);
+  list-style-position:inside}
+.sugg[open] summary{border-bottom:1px solid var(--rule-soft)}
+.sugg ul{list-style:none;margin:0;padding:0}
+.sugrow{display:grid;grid-template-columns:118px 1fr auto;gap:4px 14px;align-items:start;
+  padding:9px 11px;border-top:1px solid var(--rule-soft);margin:0}
+.sugrow:first-child{border-top:0}
+.sugwhen{font-family:var(--mono);font-size:11.5px;color:var(--ink);font-variant-numeric:tabular-nums}
+.sugwhen span{display:block;color:var(--muted);font-size:10.5px}
+.sugwhat{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;min-width:0;font-size:13px}
+.sugwhat .linkish{color:var(--ink);font-weight:600}
+.sugfit{flex-basis:100%;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.sugg.none{margin:6px 0 2px;padding:0;border:0;background:none;font-size:12.5px;color:var(--muted)}
+@media (max-width:560px){.sugrow{grid-template-columns:1fr}}
 @media (max-width:560px){.drawer{padding:0 16px 40px}.gap{margin-left:0}}
 
 @media (max-width:640px){
@@ -456,7 +471,7 @@ button:disabled{opacity:.5;cursor:default}
   <span class="count" id="count"></span>
   <button class="reset" id="prefs" type="button">Interests</button>
   <button class="reset" id="startOver" type="button" title="Wipe your plan and answers, then retake the survey">Start over</button>
-  <button class="reset" id="share" type="button">Share</button>
+  <button class="reset" id="share" type="button" title="Export your plan, or import a teammate's">Share / import</button>
   <button class="reset" id="reset" type="button">Clear</button>
 </div></div>
 
@@ -564,6 +579,15 @@ function committedSlot(r) {
 }
 const isCommitted = (r, sl) => committedSlot(r) === sl;
 function chooseSlot(code, key) { chosen[code] = key; lsSet(K.slots, chosen); }
+/* Replace a planned session with a suggested one (or move it to another showing).
+   A claim you held on the one you drop is released so a teammate can take it. */
+function swapIn(dropCode, inCode, key) {
+  if (inCode !== dropCode) {
+    plan.delete(dropCode); delete chosen[dropCode];
+    if (claims.get(dropCode) && isMe(claims.get(dropCode).by)) releaseSession(dropCode).then(render);
+  }
+  plan.add(inCode); chooseSlot(inCode, key); savePlan(); render();
+}
 const saveCmp = () => cmps.length
   ? lsSet(K.cmp, cmps.map(x => ({name:x.name, codes:[...x.codes], slots:x.slots})))
   : localStorage.removeItem(K.cmp);
@@ -574,7 +598,7 @@ function theirSlot(x, r) {
   return all.find(sl => slotKey(sl) === x.slots[r.c]) || all[0] || null;
 }
 
-const state = {q:"", tracks:new Set(), f:new Set(), view:"foryou", day:null, fyDay:null};
+const state = {q:"", tracks:new Set(), f:new Set(), view:"foryou", day:null, fyDay:null, sugOpen:new Set()};
 
 /* ---------- capabilities (resolve late, never assumed) ---------- */
 let DB = null, SAMPLE = null, DL = null, USER = null;
@@ -986,6 +1010,97 @@ function suggestFor(n) {
   return {keep, drop, keepScore:Math.max(sa,sb), dropScore:Math.min(sa,sb), alts};
 }
 
+/* Your committed sessions on a day, in time order — whatever the view's
+   filters hide, so a clash can't vanish behind "Hands-on". */
+function myDay(daySort) {
+  return [...plan].map(c => SESS.get(c)).filter(Boolean)
+    .map(r => ({r, slot: committedSlot(r)}))
+    .filter(x => x.slot && x.slot.daySort === daySort)
+    .sort((a, b) => a.slot.startMin - b.slot.startMin || a.r.c.localeCompare(b.r.c));
+}
+
+/* Minutes needed to get from one showing to the next. Unknown venue pairs get
+   AWS's own advice rather than a free pass. */
+const FALLBACK_TRAVEL = 30;
+const needMin = (a, b) => travelBetween(a.venue, b.venue)?.minutes ?? FALLBACK_TRAVEL;
+const overlaps = (a, b) => a.startMin < b.endMin && b.startMin < a.endMin;
+/* analyseDay calls a gap under travel + 10 "tight"; a suggestion must clear that too,
+   or swapping it in just trades one warning for another. */
+const TIGHT_MARGIN = 10;
+
+/* The free stretch the dropped session leaves, on its side of the one you keep
+   (after the keeper if it started later, before it if earlier), and no more
+   than an hour either side of the dropped session — a replacement fills that
+   hole, not some other part of the day. */
+const OPENING_SLACK = 60;
+function openingFor(n, mine) {
+  const {keep, drop} = suggestFor(n);
+  const others = mine.filter(x => x.r !== drop.r);
+  const i = others.findIndex(x => x.r === keep.r);
+  const after = drop.slot.startMin >= keep.slot.startMin;
+  const prev = after ? keep : (others[i - 1] || null);
+  const next = after ? (others[i + 1] || null) : keep;
+  const lo = drop.slot.startMin - OPENING_SLACK, hi = drop.slot.endMin + OPENING_SLACK;
+  return {keep, drop, others, prev, next, lo, hi};
+}
+const clock = m => { const h = Math.floor(m / 60), mm = String(m % 60).padStart(2, "0");
+  return `${String((h + 11) % 12 + 1).padStart(2, "0")}:${mm} ${h < 12 ? "AM" : "PM"}`; };
+
+/* Sessions that could take the dropped one's place: inside that opening, with
+   enough time to get there from the session before and on to the one after,
+   and overlapping nothing else you've planned that day. Best match first. */
+function replacementsFor(n, mine, pool = CATALOG) {
+  const {drop, others, prev, next, lo, hi} = openingFor(n, mine);
+  const day = drop.slot.daySort, out = [];
+  pool.forEach(r => (r.s || []).forEach(slot => {
+    if (slot.daySort !== day || slot === drop.slot) return;
+    if (slot.startMin < lo || slot.endMin > hi) return;  // outside the hole it leaves
+    if (plan.has(r.c) && r !== drop.r) return;           // already in your plan
+    if (prev && slot.startMin - prev.slot.endMin < needMin(prev.slot, slot) + TIGHT_MARGIN) return;
+    if (next && next.slot.startMin - slot.endMin < needMin(slot, next.slot) + TIGHT_MARGIN) return;
+    if (others.some(o => overlaps(o.slot, slot))) return;
+    const sc = scoreOf(r);
+    out.push({r, slot, score: sc.score, why: sc.why,
+      before: prev && {from: prev, spare: slot.startMin - prev.slot.endMin - needMin(prev.slot, slot)},
+      after: next && {to: next, spare: next.slot.startMin - slot.endMin - needMin(slot, next.slot)}});
+  }));
+  const tier = r => r.pick ? (r.pick.tier === 1 ? 2 : 1) : 0;
+  return out.sort((x, y) => y.score - x.score || tier(y.r) - tier(x.r)
+    || Math.abs(x.slot.startMin - drop.slot.startMin) - Math.abs(y.slot.startMin - drop.slot.startMin)
+    || x.r.c.localeCompare(y.r.c));
+}
+
+/* The collapsible list under a problem. Closed until you open it; stays open
+   across re-renders. */
+const SUG_SHOWN = 5;
+function suggestionsBlock(n, mine, pool) {
+  const {drop, prev, next, lo, hi} = openingFor(n, mine);
+  const list = replacementsFor(n, mine, pool);
+  const key = `${drop.r.c}@${slotKey(drop.slot)}`;
+  // Name the window: a neighbour where there is one, else the clock time.
+  const from = prev && prev.slot.endMin >= lo ? "after " + esc(prev.r.c) : "from " + clock(Math.max(lo, prev ? prev.slot.endMin : lo));
+  const to = next && next.slot.startMin <= hi ? "before " + esc(next.r.c) : "until " + clock(Math.min(hi, next ? next.slot.startMin : hi));
+  const span = `${from}, ${to}`;
+  if (!list.length) return `<p class="sugg none">No other session fits ${span} with time to get there.</p>`;
+  const rows = list.slice(0, SUG_SHOWN).map(x => {
+    const venue = VNAME[x.slot.venue] || x.slot.room || "";
+    const fit = [x.before && `${x.before.spare} min to spare after ${esc(x.before.from.r.c)}`,
+                 x.after && `${x.after.spare} min to spare before ${esc(x.after.to.r.c)}`].filter(Boolean).join(" · ");
+    const same = x.r === drop.r;
+    return `<li class="sugrow">
+      <div class="sugwhen"><b>${esc(x.slot.start)}</b>&ndash;${esc(x.slot.end)}<span>${esc(venue)}</span></div>
+      <div class="sugwhat"><span class="code">${esc(x.r.c)}</span> <span class="lvl">${esc(x.r.l)}</span>
+        ${same ? '<span class="rpt">Same session, other showing</span>' : ""}
+        <button class="linkish" type="button" data-open="${esc(x.r.c)}">${esc(x.r.t)}</button>
+        <span class="sugfit">${esc(x.r.y)}${x.why.length ? " · matches " + x.why.map(esc).join(", ") : ""}${fit ? " · " + fit : ""}</span></div>
+      <button class="plan" type="button" data-swap="${esc(drop.r.c)}" data-in="${esc(x.r.c)}" data-slot="${esc(slotKey(x.slot))}">${same ? "Move to this showing" : "Swap for " + esc(drop.r.c)}</button>
+    </li>`;
+  }).join("");
+  return `<details class="sugg" data-sug="${esc(key)}"${state.sugOpen.has(key) ? " open" : ""}>
+    <summary>${list.length} session${list.length === 1 ? "" : "s"} fit${list.length === 1 ? "s" : ""} instead of ${esc(drop.r.c)} — ${span}${list.length > SUG_SHOWN ? `, best ${SUG_SHOWN} shown` : ""}</summary>
+    <ul>${rows}</ul></details>`;
+}
+
 /* ===================================================================
    Rendering
    =================================================================== */
@@ -1196,7 +1311,7 @@ function gapRow(n) {
 function renderDays() {
   if (!DAYS.length) return pendingPanel();
   const rows = dayRows(state.day);
-  const mine = rows.filter(x => plan.has(x.r.c) && isCommitted(x.r, x.slot));
+  const mine = myDay(state.day);
   const notes = analyseDay(mine);
   const problems = notes.filter(n => n.verdict !== "ok");
   const clashCodes = new Set();
@@ -1215,8 +1330,9 @@ function renderDays() {
         const alt = s.alts.length
           ? ` ${esc(s.drop.r.c)} runs again ${esc(s.alts[0].dayName)} ${esc(s.alts[0].start)} — <button class="plan" data-move="${esc(s.drop.r.c)}" data-slot="${esc(slotKey(s.alts[0]))}">move to it</button>`
           : ` ${esc(s.drop.r.c)} has no other showing.`;
-        if (n.overlap) return `<li><b>${esc(n.A.r.c)}</b> and <b>${esc(n.B.r.c)}</b> overlap. Your interests score ${esc(s.keep.r.c)} higher (${s.keepScore} vs ${s.dropScore}), so keep it.${alt}</li>`;
-        return `<li><b>${esc(n.A.r.c)}</b> → <b>${esc(n.B.r.c)}</b> leaves ${n.gap} min for a trip that needs about ${n.travel?.minutes ?? 45}.${alt}</li>`;
+        const sug = suggestionsBlock(n, mine);
+        if (n.overlap) return `<li><b>${esc(n.A.r.c)}</b> and <b>${esc(n.B.r.c)}</b> overlap. Your interests score ${esc(s.keep.r.c)} higher (${s.keepScore} vs ${s.dropScore}), so keep it.${alt}${sug}</li>`;
+        return `<li><b>${esc(n.A.r.c)}</b> → <b>${esc(n.B.r.c)}</b> leaves ${n.gap} min for a trip that needs about ${n.travel?.minutes ?? 45}.${alt}${sug}</li>`;
       }).join("")}</ul>
       ${uniqueProblems.length > 6 ? `<p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">…and ${uniqueProblems.length-6} more. Resolve these first — each fix often clears the next.</p>` : ""}
       <p style="margin:9px 0 0;font-size:12.5px;color:var(--muted)">Travel figures are estimates, not AWS's numbers. AWS advises allowing 30–45 minutes between anything.</p></div>`;
@@ -1264,7 +1380,7 @@ function coverActions(code, compact) {
 
 function renderTeam() {
   const status =
-    dbError ? `<span class="msg err">${esc(explainDb(dbError))} (${esc(dbError)}) Your plan is still saved locally — use <b>Share</b> to compare by code.</span>`
+    dbError ? `<span class="msg err">${esc(explainDb(dbError))} (${esc(dbError)}) Your plan is still saved locally — use <b>Share / import</b> to compare by code.</span>`
     : feedError ? `<span class="msg err">Live updates stopped (${esc(feedError)}). Reload the page to reconnect.</span>`
     : dbState === "connecting" ? `<span class="msg">Connecting to the shared store…</span>`
     : dbState === "unavailable" ? `<span class="msg">Shared mode is unavailable in this view — your plan stays local.</span>`
@@ -1285,7 +1401,7 @@ function renderTeam() {
     <span class="msg" id="nameMsg">${status}</span>
   </div>`;
   const flashBar = flash ? `<p class="msg ${flash.ok ? "ok" : "err"}" style="margin:-10px 0 18px">${esc(flash.text)}</p>` : "";
-  if (dbState !== "ready") return nameBar + diagBar + `<p class="empty">Live sharing needs the published page. Use <b>Share</b> to exchange plan codes instead.</p>`;
+  if (dbState !== "ready") return nameBar + diagBar + `<p class="empty">Live sharing needs the published page. Use <b>Share / import</b> to exchange plan codes instead.</p>`;
   if (!attendees.length) return nameBar + diagBar + `<p class="empty">No one has joined yet. Join above, then send whoever you're going with this page's link.</p>`;
 
   // Every session anyone plans, with who plans it.
@@ -1871,6 +1987,12 @@ out.addEventListener("click", async e => {
   }
   const mv = e.target.closest("[data-move]");
   if (mv) { chooseSlot(mv.dataset.move, mv.dataset.slot); plan.add(mv.dataset.move); savePlan(); render(); return; }
+  const sw = e.target.closest("[data-swap]");
+  if (sw) { swapIn(sw.dataset.swap, sw.dataset.in, sw.dataset.slot); return; }
+  const sum = e.target.closest("details.sugg > summary");
+  if (sum) { const k = sum.parentElement.dataset.sug;
+    // The click toggles it after this handler; record the state it is about to take.
+    sum.parentElement.open ? state.sugOpen.delete(k) : state.sugOpen.add(k); return; }
   const td = e.target.closest("[data-tday]");
   if (td) { state.teamDay = td.dataset.tday; render(); return; }
   const nf = e.target.closest("[data-nf]");

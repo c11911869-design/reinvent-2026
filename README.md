@@ -19,6 +19,11 @@ catalog and published as an Artifact.
   in this view, with a session count per day). Your plan in time order per conference day, with **travel checks**
   between consecutive sessions, clash flags, and advice on which of two
   overlapping sessions to keep — plus one-click moves to an alternate showing.
+  Under each problem, a collapsible list of sessions that could take the dropped
+  one's place: within an hour of it, overlapping nothing else you've planned, and
+  leaving the walk/shuttle time plus 10 minutes (so it isn't flagged "tight"
+  either). Best match first, with a one-click swap. The check runs on your whole
+  day, whatever filters are on.
 - **Team.** Everyone who joins. Plans sync live. **Doubled up** lists sessions
   two or more people plan; one person claims each ("I'll cover it") and the
   rest can drop it. **Who's where** shows the whole team's day in time order,
@@ -28,7 +33,7 @@ catalog and published as an Artifact.
   summary** across every note — chunked to fit the model's input cap, saved for
   everyone, flagged stale when notes change. Export all of it as Markdown.
 - **Start over.** Toolbar button (two clicks): deletes your plan, survey answers and claims here and in the shared store, then reopens the survey. Your notes stay. If the shared delete fails, nothing local is wiped.
-- **Share / import.** Export your plan as an `RI26-…` code (it carries the showing you picked for
+- **Share / import** (toolbar link). Export your plan as an `RI26-…` code (it carries the showing you picked for
   repeated sessions). Import any number of teammates' codes: tiles show who else has a session and
   whether they're at the same showing, **Days** shows each teammate on the showing they picked, and
   the Both / Only mine / Only theirs filters slice the overlap. Re-importing a name updates it. This
