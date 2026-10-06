@@ -33,6 +33,15 @@ catalog and published as an Artifact.
 No dependencies — standard library only.
 
 ```bash
+./run.sh                      # build if needed, serve on 127.0.0.1:8790, open the browser
+./run.sh --refresh            # pull the live catalog first
+./run.sh --test               # test harness with a stub team store (?as=<name>)
+```
+
+Run locally, there is no shared team store: your plan stays in that browser,
+and the Team view falls back to comparing `RI26-…` plan codes.
+
+```bash
 python3 build.py              # fetch the catalog, rebuild dist/
 python3 build.py --offline    # rebuild from data/ without network
 ```
@@ -48,6 +57,7 @@ above (passing that URL, so it updates in place).
 
 | Path | Role |
 |---|---|
+| `run.sh` | Build if needed and serve locally |
 | `build.py` | Fetch, shape, and emit the page |
 | `src/notes.py` | The curation: track, tier, commentary per session code. **Edit here** to change picks |
 | `src/venues.py` | Campus graph and travel estimates between venues |
