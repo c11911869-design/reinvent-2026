@@ -25,7 +25,7 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).parent.parent
 
-STUB = r"""
+STUB = r"""<meta charset="utf-8">
 <script>
 /* ---- local test stub for window.claude (NEVER shipped) ---- */
 (function () {

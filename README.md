@@ -25,6 +25,7 @@ catalog and published as an Artifact.
   to delete). A saved AI summary per session, and an end-of-conference **team
   summary** across every note — chunked to fit the model's input cap, saved for
   everyone, flagged stale when notes change. Export all of it as Markdown.
+- **Start over.** Toolbar button (two clicks): deletes your plan, survey answers and claims here and in the shared store, then reopens the survey. Your notes stay. If the shared delete fails, nothing local is wiped.
 - **Share.** Offline fallback: export a `RI26-…` plan code and compare by paste.
 
 ## Running it

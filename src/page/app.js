@@ -291,7 +291,7 @@ function profileCeiling() {
        + (profile.hands ? W.hands : 0);
 }
 
-let ranked = [], cutoff = 0, ceiling = 0, positives = 0;
+let ranked = [], cutoff = 0, ceiling = 0, maxScore = 0, positives = 0;
 const MIN_SIGNAL = 6;      // one weak tag hit never counts as a match
 const SHARE = 0.10;        // keep at most this share of the catalog
 const FRACTION = 0.35;     // ...and at least this fraction of what's achievable
@@ -303,6 +303,10 @@ const FRACTION = 0.35;     // ...and at least this fraction of what's achievable
    own ceiling, and a share of the catalog. */
 function rank() {
   ceiling = profileCeiling();
+  // Scores also carry the curated/core bonus, so the true top score is higher
+  // than what interests alone can reach. Quote that, or the bar can read as
+  // "6 of a possible 4".
+  maxScore = ceiling + W.curated + W.core;
   const all = CATALOG.map(r => ({r, ...scoreOf(r)}))
     .filter(x => x.score > 0)
     .sort((a,b) => b.score - a.score || (a.r.pick?1:0) - (b.r.pick?1:0) || a.r.c.localeCompare(b.r.c));
@@ -310,7 +314,10 @@ function rank() {
 
   const targetN = Math.min(180, Math.max(24, Math.round(CATALOG.length * SHARE)));
   const atTarget = all.length > targetN ? all[targetN - 1].score : 0;
-  cutoff = Math.max(MIN_SIGNAL, Math.ceil(ceiling * FRACTION), atTarget);
+  // The floor can't ask for more than your answers can award, or a sparse
+  // profile would let nothing but curated picks through.
+  const floor = ceiling ? Math.min(MIN_SIGNAL, ceiling) : MIN_SIGNAL;
+  cutoff = Math.max(floor, Math.ceil(ceiling * FRACTION), atTarget);
 
   // Filter by score, not by index, so a run of tied scores is never cut in half.
   // Scores are coarse integers, so the group sitting exactly on the bar can be
@@ -518,6 +525,22 @@ function coverBadge(code) {
 }
 const durLabel = sl => sl.endEst ? "end TBA · ~" + (sl.endMin - sl.startMin) + " min" : (sl.endMin - sl.startMin) + " min";
 
+/* When a session happens: the showing you'll attend (the first, unless you
+   picked another), plus how many other showings exist. */
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const dateLabel = sl => { const [, m, d] = (sl.date || "").split("-").map(Number);
+  return `${(sl.dayName || "").slice(0,3)} ${MON[m-1] || ""} ${d || ""}`.trim(); };
+function whenLine(r) {
+  const sl = committedSlot(r);
+  if (!sl) return `<p class="whenl tba">Time not yet published</p>`;
+  const more = (r.s || []).length - 1;
+  return `<p class="whenl"><b>${esc(dateLabel(sl))}</b> &middot; ${esc(sl.start)}&ndash;${esc(sl.endEst ? "TBA" : sl.end)}
+    &middot; ${esc(VNAME[sl.venue] || sl.room || "")}${more > 0 ? ` <span class="more">+${more} more showing${more>1?"s":""}</span>` : ""}</p>`;
+}
+/* Sort key: day, then start time; unscheduled sessions last. */
+const whenKey = r => { const sl = committedSlot(r); return sl ? sl.daySort * 10000 + sl.startMin : Infinity; };
+const byWhen = (a, b) => whenKey(a) - whenKey(b) || a.c.localeCompare(b.c);
+
 function tile(x) {
   const r = x.r, on = plan.has(r.c), lc = r.pick ? `var(--t-${r.pick.track})` : "var(--accent)";
   return `<button class="tile${on?" on":""}" style="--lc:${lc}" data-code="${esc(r.c)}">
@@ -525,6 +548,7 @@ function tile(x) {
       ${r.pick?.tier===1 ? '<span class="star">Core</span>' : ""}
       ${cmpBadge(r)}${r.h ? '<span class="tag hands">Hands-on</span>' : ""}</div>
     <h3>${esc(r.t)}</h3>
+    ${whenLine(r)}
     ${x.why.length ? `<p class="why">Matches <b>${x.why.map(esc).join("</b>, <b>")}</b></p>` : ""}
     <p class="ab">${esc(r.pick?.note || r.a)}</p>
     <div class="c-foot">${metaRow(r).map(t => `<span class="tag">${esc(t)}</span>`).join("")}
@@ -546,9 +570,23 @@ function renderForYou() {
       : `Ranked against your interests across all ${CATALOG.length.toLocaleString()} published sessions. `}${
       !ceiling ? ``
       : !cutoff ? `Your profile is narrow, so this is simply the best-scoring ${ranked.length} rather than a fixed bar. Add interests to sharpen it.`
-      : `The bar is <b>${cutoff} points of a possible ${ceiling}</b>, and it rises automatically as you pick more interests — so widening your profile surfaces better matches rather than simply more of them. ${positives.toLocaleString()} sessions score above zero; these clear the bar.`
-    } Curated picks are weighted up and carry my commentary; sponsor sessions are weighted down.${vis.length>60 ? " Showing the top 60." : ""}</p>
-    <div class="tiles">${top.map(tile).join("")}</div></section>`;
+      : `The bar is <b>${cutoff} points of a possible ${maxScore}</b>, and it rises automatically as you pick more interests — so widening your profile surfaces better matches rather than simply more of them. ${positives.toLocaleString()} sessions score above zero; ${ranked.length} clear the bar.${cutoff > ceiling
+        ? ` Your answers so far can award at most ${ceiling}, so they can't tell hundreds of sessions apart — the curated picks lead until you add topics or areas.` : ""}`
+    } Curated picks are weighted up and carry my commentary; sponsor sessions are weighted down.${vis.length>60 ? " Showing the top 60" : " Shown"} by day, in time order.</p>
+    ${dayGroups(top)}</section>`;
+}
+
+/* The top matches, regrouped by the day you'd attend them, in time order. */
+function dayGroups(xs) {
+  const groups = new Map();
+  [...xs].sort((a, b) => byWhen(a.r, b.r)).forEach(x => {
+    const sl = committedSlot(x.r), k = sl ? sl.daySort : "tba";
+    (groups.get(k) || groups.set(k, {sl, xs: []}).get(k)).xs.push(x);
+  });
+  return [...groups.values()].map(g => `<h3 class="dayhead">${g.sl
+      ? `${esc(g.sl.dayName)} <span>${esc(dateLabel(g.sl).slice(4))}</span>`
+      : "Time not yet published"}<span class="n">${g.xs.length} session${g.xs.length===1?"":"s"}</span></h3>
+    <div class="tiles">${g.xs.map(tile).join("")}</div>`).join("");
 }
 
 function card(r) {
@@ -558,6 +596,7 @@ function card(r) {
       ${p.tier===1 ? '<span class="star">Core</span>' : ""}${cmpBadge(r)}
       ${r.h ? '<span class="tag hands">Hands-on</span>' : ""}${r.sp ? '<span class="tag">Sponsor</span>' : ""}</div>
     <h3 class="c-title">${esc(r.t)}</h3>
+    ${whenLine(r)}
     <p class="c-note">${esc(p.note)}</p>
     <div class="c-foot">${metaRow(r).map(t => `<span class="tag">${esc(t)}</span>`).join("")}
       <span class="plan" aria-pressed="${on}">${on ? "In plan" : "+ Plan"}</span></div>
@@ -568,7 +607,7 @@ function renderTracks() {
   const vis = CURATED.filter(matches);
   if (!vis.length) return `<p class="empty">No sessions match those filters.</p>`;
   return TRACKS.map(([id,name,desc]) => {
-    const rows = vis.filter(r => r.pick.track === id);
+    const rows = vis.filter(r => r.pick.track === id).sort(byWhen);
     if (!rows.length) return "";
     return `<section class="sect" style="--lc:var(--t-${id})">
       <div class="sect-head"><h2>${esc(name)}</h2><span class="n">${rows.length}</span></div>
@@ -1392,6 +1431,40 @@ $("#trackChips").addEventListener("click", e => {
 });
 $("#q").addEventListener("input", e => { state.q = e.target.value.trim().toLowerCase(); render(); });
 $("#prefs").addEventListener("click", () => openWizard(true));
+
+/* Start over: wipe this person's plan, survey answers and claims — here and in
+   the shared store — then retake the survey. Notes stay: they are the team's.
+   Two clicks rather than confirm(), which a sandboxed frame may block. */
+let wipeArmed = null;
+$("#startOver").addEventListener("click", async () => {
+  const btn = $("#startOver");
+  if (!wipeArmed) {
+    btn.textContent = "Wipe my plan? Click again";
+    wipeArmed = setTimeout(() => { wipeArmed = null; btn.textContent = "Start over"; }, 4000);
+    return;
+  }
+  clearTimeout(wipeArmed); wipeArmed = null;
+  btn.disabled = true; btn.textContent = "Wiping…";
+  clearTimeout(pushT); pushT = null;
+  let failed = "";
+  if (DB && myId()) {
+    try {
+      for (const [code, c] of claims) if (isMe(c.by)) { await DB.doc("claims/" + code).delete(); claims.delete(code); }
+      const ref = DB.doc("attendees/" + myId());
+      await ref.delete();
+      if ((await ref.get()).exists) failed = "not_deleted";
+    } catch (err) { failed = err?.code || "error"; }
+  }
+  // Wipe this browser only once the shared copy is gone; otherwise the next
+  // load would quietly restore the plan from the store.
+  if (failed) { dbError = failed; btn.disabled = false; btn.textContent = "Start over"; render(); return; }
+  plan = new Set(); chosen = {}; profile = null; cmp = null;
+  [K.plan, K.prof, K.slots, K.cmp].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+  lastPushed = ""; dbError = "";
+  btn.disabled = false; btn.textContent = "Start over";
+  render();
+  openWizard(false);
+});
 $("#reset").addEventListener("click", () => {
   state.q = ""; state.tracks.clear(); state.f.clear(); $("#q").value = "";
   document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed","false"));
