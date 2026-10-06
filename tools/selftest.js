@@ -462,6 +462,120 @@
   });
   reset(); profile = null; state.view = "foryou";
 
+  /* ---------- Days: sessions that fit the open time in your plan ---------- */
+  const dayBounds = d => { let a = Infinity, b = -Infinity;
+    CATALOG.forEach(r => (r.s || []).forEach(sl => { if (sl.daySort === d) { a = Math.min(a, sl.startMin); b = Math.max(b, sl.endMin); } }));
+    return [a, b]; };
+  // Two Monday sessions with at least two free hours between them, and room on either side.
+  const pairGap = (() => { const xs = singlesOn(monday);
+    for (const a of xs) for (const b of xs)
+      if (a !== b && b.s[0].startMin - a.s[0].endMin >= 120 && a.s[0].startMin >= 600 && b.s[0].endMin <= 960) return [a, b];
+    return null; })();
+  // Independent check: does showing sl of r fit between p and q (either may be null) on Monday?
+  const fitsGap = (r, sl, p, q, mine) => {
+    const [first, last] = dayBounds(monday);
+    return sl.daySort === monday && !plan.has(r.c)
+      && !mine.some(x => clash(x.slot, sl))
+      && (p ? sl.startMin - p.slot.endMin >= need(p.slot, sl) + 10 : sl.startMin >= first)
+      && (q ? q.slot.startMin - sl.endMin >= need(sl, q.slot) + 10 : sl.endMin <= last);
+  };
+  const bruteGap = (p, q, mine) => { const all = [];
+    CATALOG.forEach(r => (r.s || []).forEach(sl => { if (fitsGap(r, sl, p, q, mine)) all.push(r.c + "@" + slotKey(sl)); }));
+    return all.sort(); };
+
+  await t("fixture: two Monday sessions with a two-hour gap", () => ok(pairGap, "none found"));
+  await t("an open-time panel lists the gap, collapsed", () => {
+    reset(); profile = null; rank(); state.sugOpen.clear();
+    plan = new Set(pairGap.map(r => r.c)); chosen = {}; state.day = monday; goView("days");
+    const panel = document.querySelector(".advice.freetime");
+    ok(panel, "no open-time panel");
+    const li = [...panel.querySelectorAll(":scope > ul > li")].find(el => /Between/.test(el.textContent));
+    ok(li && li.textContent.includes(pairGap[0].c) && li.textContent.includes(pairGap[1].c), "gap between the two not listed");
+    ok(!li.querySelector("details").open, "should start collapsed");
+  });
+  await t("gap between sessions: suggestions are exactly what fits (brute force)", () => {
+    plan = new Set(pairGap.map(r => r.c)); chosen = {};
+    const mine = myDay(monday), g = gapsIn(monday, mine).find(x => x.prev && x.next);
+    ok(g, "gap missing");
+    eq(g.fits.map(x => x.r.c + "@" + slotKey(x.slot)).sort(), bruteGap(g.prev, g.next, mine));
+  });
+  await t("before your first and after your last: within the day's hours", () => {
+    const mine = myDay(monday), gs = gapsIn(monday, mine);
+    const before = gs.find(x => !x.prev), after = gs.find(x => !x.next);
+    ok(before && after, "edge gaps missing");
+    eq(before.fits.map(x => x.r.c + "@" + slotKey(x.slot)).sort(), bruteGap(null, before.next, mine), "before");
+    eq(after.fits.map(x => x.r.c + "@" + slotKey(x.slot)).sort(), bruteGap(after.prev, null, mine), "after");
+  });
+  await t("Add to plan adds that showing and creates no new problem", async () => {
+    plan = new Set(pairGap.map(r => r.c)); chosen = {}; savePlan(); state.day = monday; goView("days");
+    const btn = [...document.querySelectorAll(".advice.freetime > ul > li")].find(el => /Between/.test(el.textContent))
+      .querySelector("button[data-addfit]");
+    const code = btn.dataset.addfit, key = btn.dataset.slot;
+    btn.click(); await tick();
+    ok(plan.has(code), "not added"); eq(slotKey(committedSlot(SESS.get(code))), key, "wrong showing");
+    eq(analyseDay(myDay(monday)).filter(n => n.verdict !== "ok").length, 0, "adding it created a problem");
+  });
+  await t("an added session isn't suggested again, and the gap splits around it", () => {
+    const mine = myDay(monday), added = mine.find(x => !pairGap.includes(x.r));
+    ok(added, "nothing added");
+    const gs = gapsIn(monday, mine);
+    ok(!gs.some(g => g.fits.some(x => x.r === added.r)), "suggested again");
+    ok(!gs.some(g => g.prev && g.next && g.prev.r === pairGap[0] && g.next.r === pairGap[1]), "old gap still whole");
+  });
+  await t("Add to plan records the showing you picked, not the first one", async () => {
+    // A later day, where a repeat session's non-first showing can fill a gap.
+    let x = null;
+    for (const d of DAYS.slice(1)) {
+      for (const anchor of singlesOn(d.sort).slice(0, 40)) {
+        plan = new Set([anchor.c]); chosen = {};
+        x = gapsIn(d.sort, myDay(d.sort)).flatMap(g => g.fits).find(f => (f.r.s || []).length > 1 && f.slot !== f.r.s[0]);
+        if (x) break;
+      }
+      if (x) break;
+    }
+    ok(x, "no multi-showing fit to try");
+    const b = document.createElement("button");
+    b.dataset.addfit = x.r.c; b.dataset.slot = slotKey(x.slot); out.appendChild(b);
+    b.click(); await tick();
+    eq(committedSlot(x.r), x.slot, "recorded the wrong showing");
+  });
+  await t("with a clash already in the plan, gaps respect every session and the true last one", () => {
+    // D: a long Monday session; E: inside it (a clash you haven't fixed); F: later on.
+    const xs = singlesOn(monday);
+    let D, E, F;
+    for (const d of xs) { if (d.s[0].endMin - d.s[0].startMin < 120) continue;
+      E = xs.find(e => e !== d && e.s[0].startMin > d.s[0].startMin && e.s[0].endMin <= d.s[0].endMin - 45);
+      F = xs.find(f => f.s[0].startMin >= d.s[0].endMin + 90 && f.s[0].endMin <= 1080);
+      if (E && F) { D = d; break; } }
+    ok(D, "no long session with one inside it");
+    plan = new Set([D.c, E.c, F.c]); chosen = {};
+    const mine = myDay(monday), gs = gapsIn(monday, mine);
+    gs.forEach(g => g.fits.forEach(x => ok(!mine.some(m => clash(m.slot, x.slot)), `${x.r.c} ${x.slot.start} overlaps your plan`)));
+    const ef = gs.find(g => g.prev?.r === E && g.next?.r === F);
+    if (ef) eq(ef.fits.map(x => x.r.c + "@" + slotKey(x.slot)).sort(), bruteGap(E.s.length ? mine.find(m => m.r === E) : null, mine.find(m => m.r === F), mine), "E→F");
+    const end = gs.find(g => !g.next);
+    ok(!end || end.prev.r === F, "after-last gap should follow the session that finishes last");
+    plan = new Set([D.c, E.c]); chosen = {};
+    const tail = gapsIn(monday, myDay(monday)).find(g => !g.next);
+    ok(!tail || tail.prev.r === D, `after-last gap follows ${tail && tail.prev.r.c}, not ${D.c} which ends later`);
+  });
+  await t("no open-time panel on a day with nothing planned", () => {
+    plan = new Set(); state.day = monday; goView("days");
+    ok(!document.querySelector(".advice.freetime"), "panel shown with an empty plan");
+    eq(gapsIn(monday, []).length, 0);
+  });
+  await t("gaps where nothing fits aren't listed", () => {
+    plan = new Set(pairGap.map(r => r.c)); chosen = {};
+    eq(gapsIn(monday, myDay(monday), []).length, 0);
+    eq(gapsPanel(monday, myDay(monday), []), "");
+  });
+  await t("open-time lists stay open across re-renders", async () => {
+    plan = new Set(pairGap.map(r => r.c)); chosen = {}; state.day = monday; goView("days");
+    document.querySelector(".advice.freetime details summary").click(); await tick(); render();
+    ok(document.querySelector(".advice.freetime details").open, "closed after re-render");
+  });
+  reset(); profile = null; state.view = "foryou";
+
   /* ---------- regressions: earlier features ---------- */
   await t("Start over clears plan, answers and comparisons", async () => {
     plan = new Set([A.c]); savePlan(); profile = {tp: [], ai: [], ro: [], in: [], levels: ["300"], fmt: [], hands: true};

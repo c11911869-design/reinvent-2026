@@ -536,13 +536,17 @@ const clock = m => { const h = Math.floor(m / 60), mm = String(m % 60).padStart(
 /* Sessions that could take the dropped one's place: inside that opening, with
    enough time to get there from the session before and on to the one after,
    and overlapping nothing else you've planned that day. Best match first. */
-function replacementsFor(n, mine, pool = CATALOG) {
-  const {drop, others, prev, next, lo, hi} = openingFor(n, mine);
-  const day = drop.slot.daySort, out = [];
+/* Every showing that fits between prev and next (either may be null) on a day:
+   inside [lo, hi], reachable from prev and on to next with the travel time plus
+   the "tight" margin, overlapping nothing in `others`, and not already in your
+   plan (except `allow`, a session whose other showing may be offered). Best
+   interest match first; ties go to curated picks, then to the time nearest `near`. */
+function fitsIn({day, prev, next, others, lo = -Infinity, hi = Infinity, allow = null, skip = null, near = 0}, pool = CATALOG) {
+  const out = [];
   pool.forEach(r => (r.s || []).forEach(slot => {
-    if (slot.daySort !== day || slot === drop.slot) return;
-    if (slot.startMin < lo || slot.endMin > hi) return;  // outside the hole it leaves
-    if (plan.has(r.c) && r !== drop.r) return;           // already in your plan
+    if (slot.daySort !== day || slot === skip) return;
+    if (slot.startMin < lo || slot.endMin > hi) return;
+    if (plan.has(r.c) && r !== allow) return;
     if (prev && slot.startMin - prev.slot.endMin < needMin(prev.slot, slot) + TIGHT_MARGIN) return;
     if (next && next.slot.startMin - slot.endMin < needMin(slot, next.slot) + TIGHT_MARGIN) return;
     if (others.some(o => overlaps(o.slot, slot))) return;
@@ -553,13 +557,48 @@ function replacementsFor(n, mine, pool = CATALOG) {
   }));
   const tier = r => r.pick ? (r.pick.tier === 1 ? 2 : 1) : 0;
   return out.sort((x, y) => y.score - x.score || tier(y.r) - tier(x.r)
-    || Math.abs(x.slot.startMin - drop.slot.startMin) - Math.abs(y.slot.startMin - drop.slot.startMin)
+    || Math.abs(x.slot.startMin - near) - Math.abs(y.slot.startMin - near)
     || x.r.c.localeCompare(y.r.c));
+}
+function replacementsFor(n, mine, pool = CATALOG) {
+  const {drop, others, prev, next, lo, hi} = openingFor(n, mine);
+  return fitsIn({day: drop.slot.daySort, prev, next, others, lo, hi,
+                 allow: drop.r, skip: drop.slot, near: drop.slot.startMin}, pool);
+}
+
+/* Free time in your day: before your first session, between each pair, and
+   after the one that finishes last (first/last are only for the labels — no
+   session runs outside them). Only stretches where something fits are returned. */
+function gapsIn(daySort, mine, pool = CATALOG) {
+  if (!mine.length) return [];
+  let first = Infinity, last = -Infinity;
+  CATALOG.forEach(r => (r.s || []).forEach(sl => { if (sl.daySort === daySort) {
+    first = Math.min(first, sl.startMin); last = Math.max(last, sl.endMin); } }));
+  const spans = [{prev: null, next: mine[0], from: first, to: mine[0].slot.startMin}];
+  for (let i = 0; i < mine.length - 1; i++)
+    spans.push({prev: mine[i], next: mine[i + 1], from: mine[i].slot.endMin, to: mine[i + 1].slot.startMin});
+  const end = mine.reduce((m, x) => x.slot.endMin > m.slot.endMin ? x : m, mine[0]);
+  spans.push({prev: end, next: null, from: end.slot.endMin, to: last});
+  return spans.filter(g => g.to > g.from).map(g => ({...g,
+    fits: fitsIn({day: daySort, prev: g.prev, next: g.next, others: mine, near: g.from}, pool)}))
+    .filter(g => g.fits.length);
 }
 
 /* The collapsible list under a problem. Closed until you open it; stays open
    across re-renders. */
 const SUG_SHOWN = 5;
+function sugRow(x, button, tag = "") {
+  const venue = VNAME[x.slot.venue] || x.slot.room || "";
+  const fit = [x.before && `${x.before.spare} min to spare after ${esc(x.before.from.r.c)}`,
+               x.after && `${x.after.spare} min to spare before ${esc(x.after.to.r.c)}`].filter(Boolean).join(" · ");
+  return `<li class="sugrow">
+      <div class="sugwhen"><b>${esc(x.slot.start)}</b>&ndash;${esc(x.slot.end)}<span>${esc(venue)}</span></div>
+      <div class="sugwhat"><span class="code">${esc(x.r.c)}</span> <span class="lvl">${esc(x.r.l)}</span>${tag}
+        <button class="linkish" type="button" data-open="${esc(x.r.c)}">${esc(x.r.t)}</button>
+        <span class="sugfit">${esc(x.r.y)}${x.why.length ? " · matches " + x.why.map(esc).join(", ") : ""}${fit ? " · " + fit : ""}</span></div>
+      ${button}
+    </li>`;
+}
 function suggestionsBlock(n, mine, pool) {
   const {drop, prev, next, lo, hi} = openingFor(n, mine);
   const list = replacementsFor(n, mine, pool);
@@ -569,23 +608,32 @@ function suggestionsBlock(n, mine, pool) {
   const to = next && next.slot.startMin <= hi ? "before " + esc(next.r.c) : "until " + clock(Math.min(hi, next ? next.slot.startMin : hi));
   const span = `${from}, ${to}`;
   if (!list.length) return `<p class="sugg none">No other session fits ${span} with time to get there.</p>`;
-  const rows = list.slice(0, SUG_SHOWN).map(x => {
-    const venue = VNAME[x.slot.venue] || x.slot.room || "";
-    const fit = [x.before && `${x.before.spare} min to spare after ${esc(x.before.from.r.c)}`,
-                 x.after && `${x.after.spare} min to spare before ${esc(x.after.to.r.c)}`].filter(Boolean).join(" · ");
-    const same = x.r === drop.r;
-    return `<li class="sugrow">
-      <div class="sugwhen"><b>${esc(x.slot.start)}</b>&ndash;${esc(x.slot.end)}<span>${esc(venue)}</span></div>
-      <div class="sugwhat"><span class="code">${esc(x.r.c)}</span> <span class="lvl">${esc(x.r.l)}</span>
-        ${same ? '<span class="rpt">Same session, other showing</span>' : ""}
-        <button class="linkish" type="button" data-open="${esc(x.r.c)}">${esc(x.r.t)}</button>
-        <span class="sugfit">${esc(x.r.y)}${x.why.length ? " · matches " + x.why.map(esc).join(", ") : ""}${fit ? " · " + fit : ""}</span></div>
-      <button class="plan" type="button" data-swap="${esc(drop.r.c)}" data-in="${esc(x.r.c)}" data-slot="${esc(slotKey(x.slot))}">${same ? "Move to this showing" : "Swap for " + esc(drop.r.c)}</button>
-    </li>`;
-  }).join("");
+  const rows = list.slice(0, SUG_SHOWN).map(x => { const same = x.r === drop.r;
+    return sugRow(x, `<button class="plan" type="button" data-swap="${esc(drop.r.c)}" data-in="${esc(x.r.c)}" data-slot="${esc(slotKey(x.slot))}">${same ? "Move to this showing" : "Swap for " + esc(drop.r.c)}</button>`,
+      same ? ' <span class="rpt">Same session, other showing</span>' : ""); }).join("");
   return `<details class="sugg" data-sug="${esc(key)}"${state.sugOpen.has(key) ? " open" : ""}>
     <summary>${list.length} session${list.length === 1 ? "" : "s"} fit${list.length === 1 ? "s" : ""} instead of ${esc(drop.r.c)} — ${span}${list.length > SUG_SHOWN ? `, best ${SUG_SHOWN} shown` : ""}</summary>
     <ul>${rows}</ul></details>`;
+}
+
+/* "Open time in your plan": one collapsible list per gap. */
+function gapsPanel(daySort, mine, pool) {
+  const gaps = gapsIn(daySort, mine, pool);
+  if (!gaps.length) return "";
+  const dur = m => m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? " " + (m % 60) + " min" : ""}` : `${m} min`;
+  const items = gaps.map(g => {
+    const key = `gap@${daySort}@${g.prev ? g.prev.r.c : "start"}@${g.next ? g.next.r.c : "end"}`;
+    const label = g.prev && g.next ? `Between <b>${esc(g.prev.r.c)}</b> and <b>${esc(g.next.r.c)}</b>`
+                : g.next ? `Before <b>${esc(g.next.r.c)}</b>, your first session`
+                : `After <b>${esc(g.prev.r.c)}</b>, your last session`;
+    const rows = g.fits.slice(0, SUG_SHOWN).map(x => sugRow(x,
+      `<button class="plan" type="button" data-addfit="${esc(x.r.c)}" data-slot="${esc(slotKey(x.slot))}">Add to plan</button>`)).join("");
+    return `<li>${label} &middot; ${clock(g.from)}&ndash;${clock(g.to)} (${dur(g.to - g.from)} free)
+      <details class="sugg" data-sug="${esc(key)}"${state.sugOpen.has(key) ? " open" : ""}>
+        <summary>${g.fits.length} session${g.fits.length === 1 ? "" : "s"} fit${g.fits.length === 1 ? "s" : ""} with time to get there${g.fits.length > SUG_SHOWN ? `, best ${SUG_SHOWN} shown` : ""}</summary>
+        <ul>${rows}</ul></details></li>`;
+  }).join("");
+  return `<div class="advice freetime"><b>Open time in your plan.</b> Sessions that fit each gap, leaving travel time plus ${TIGHT_MARGIN} minutes either side.<ul>${items}</ul></div>`;
 }
 
 /* ===================================================================
@@ -831,7 +879,7 @@ function renderDays() {
         return html + (n ? gapRow(n) : "");
       }).join("")
     : `<p class="empty">Nothing matches on this day.</p>`;
-  return `${advice}<div class="agenda">${body}</div>`;
+  return `${advice}${gapsPanel(state.day, mine)}<div class="agenda">${body}</div>`;
 }
 
 function pendingPanel() {
@@ -1474,6 +1522,8 @@ out.addEventListener("click", async e => {
   }
   const mv = e.target.closest("[data-move]");
   if (mv) { chooseSlot(mv.dataset.move, mv.dataset.slot); plan.add(mv.dataset.move); savePlan(); render(); return; }
+  const af = e.target.closest("[data-addfit]");
+  if (af) { plan.add(af.dataset.addfit); chooseSlot(af.dataset.addfit, af.dataset.slot); savePlan(); render(); return; }
   const sw = e.target.closest("[data-swap]");
   if (sw) { swapIn(sw.dataset.swap, sw.dataset.in, sw.dataset.slot); return; }
   const sum = e.target.closest("details.sugg > summary");

@@ -24,6 +24,9 @@ catalog and published as an Artifact.
   leaving the walk/shuttle time plus 10 minutes (so it isn't flagged "tight"
   either). Best match first, with a one-click swap. The check runs on your whole
   day, whatever filters are on.
+  **Open time in your plan** does the same for free time: before your first
+  session, between each pair, and after the last, it lists sessions that fit with
+  travel time plus 10 minutes either side, with one-click **Add to plan**.
 - **Team.** Everyone who joins. Plans sync live. **Doubled up** lists sessions
   two or more people plan; one person claims each ("I'll cover it") and the
   rest can drop it. **Who's where** shows the whole team's day in time order,
