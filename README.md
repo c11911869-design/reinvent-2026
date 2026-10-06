@@ -11,7 +11,8 @@ catalog and published as an Artifact.
 
 - **Onboarding.** Five questions built from the catalog's own facet tags (topic,
   area of interest, role, industry, level, format). Your answers score all
-  published sessions and build the **For you** page.
+  published sessions and build the **For you** page. Its chip row filters by day (All days, or one day's
+  matches, from which the top 60 are drawn).
 - **Curated.** 92 hand-picked sessions across 8 tracks, each with commentary,
   weighted up in the ranking.
 - **Days.** Pick the day from the chip row under the view tabs (it replaces the topic chips

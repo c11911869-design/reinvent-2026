@@ -76,7 +76,7 @@ function theirSlot(x, r) {
   return all.find(sl => slotKey(sl) === x.slots[r.c]) || all[0] || null;
 }
 
-const state = {q:"", tracks:new Set(), f:new Set(), view:"foryou", day:null};
+const state = {q:"", tracks:new Set(), f:new Set(), view:"foryou", day:null, fyDay:null};
 
 /* ---------- capabilities (resolve late, never assumed) ---------- */
 let DB = null, SAMPLE = null, DL = null, USER = null;
@@ -492,7 +492,7 @@ function suggestFor(n) {
    Rendering
    =================================================================== */
 function matches(r) {
-  if (state.view !== "days" && state.tracks.size && !(r.pick && state.tracks.has(r.pick.track))) return false;
+  if (!dayChipView() && state.tracks.size && !(r.pick && state.tracks.has(r.pick.track))) return false;
   if (state.f.has("core") && r.pick?.tier !== 1) return false;
   if (state.f.has("hands") && !r.h) return false;
   if (state.f.has("deep") && !["400","500"].includes(r.l)) return false;
@@ -585,10 +585,15 @@ function tile(x) {
   </button>`;
 }
 
+/* For you's day filter: the day you'd attend a session (its committed showing). */
+const dayOf = r => committedSlot(r)?.daySort || "tba";
+const fyMatches = () => ranked.filter(x => matches(x.r));
+const fyVisible = () => { const v = fyMatches(); return state.fyDay ? v.filter(x => dayOf(x.r) === state.fyDay) : v; };
+
 function renderForYou() {
   if (!profile) return `<p class="empty">Answer a few questions to build this page. <button class="btn" id="startWiz" type="button">Start</button></p>`;
-  const vis = ranked.filter(x => matches(x.r));
-  if (!vis.length) return `<p class="empty">Nothing matches those filters.</p>`;
+  const vis = fyVisible();
+  if (!vis.length) return `<p class="empty">Nothing matches ${state.fyDay ? "on that day with " : ""}those filters.</p>`;
   const top = vis.slice(0, 60);
   const inPlan = vis.filter(x => plan.has(x.r.c)).length;
   return `<section class="sect" style="--lc:var(--accent)">
@@ -601,7 +606,7 @@ function renderForYou() {
       : !cutoff ? `Your profile is narrow, so this is simply the best-scoring ${ranked.length} rather than a fixed bar. Add interests to sharpen it.`
       : `The bar is <b>${cutoff} points of a possible ${maxScore}</b>, and it rises automatically as you pick more interests — so widening your profile surfaces better matches rather than simply more of them. ${positives.toLocaleString()} sessions score above zero; ${ranked.length} clear the bar.${cutoff > ceiling
         ? ` Your answers so far can award at most ${ceiling}, so they can't tell hundreds of sessions apart — the curated picks lead until you add topics or areas.` : ""}`
-    } Curated picks are weighted up and carry my commentary; sponsor sessions are weighted down.${vis.length>60 ? " Showing the top 60" : " Shown"} by day, in time order.</p>
+    } Curated picks are weighted up and carry my commentary; sponsor sessions are weighted down.${vis.length>60 ? " Showing the top 60" : ` Showing all ${vis.length}`}${state.fyDay ? "" : " by day"}, in time order.</p>
     ${dayGroups(top)}</section>`;
 }
 
@@ -1264,15 +1269,29 @@ function cmpChips() {
 
 /* The first chip row filters by topic — except in Days, where it picks the
    day instead (topic filters are kept, and apply again outside Days). */
+const dayChipView = () => DAYS.length > 0 && (state.view === "days" || (state.view === "foryou" && !!profile));
+const dayChipLabel = (d, n) => { const [, m, dd] = d.date.split("-").map(Number);
+  return {short: `${d.name.slice(0,3)} ${MON[m-1]} ${dd}`, aria: `${d.name} ${MON[m-1]} ${dd}, ${n} session${n===1?"":"s"}`}; };
 function railChips() {
   const box = $("#trackChips");
+  if (state.view === "foryou" && dayChipView()) {
+    // A filter: All days, or one day's matches (the top 60 is then drawn from that day).
+    const all = fyMatches(), per = new Map();
+    all.forEach(x => { const k = dayOf(x.r); per.set(k, (per.get(k) || 0) + 1); });
+    const chip = (key, short, aria, n) => `<button class="chip day" data-fyday="${key}" aria-pressed="${(state.fyDay || "") === key}"
+        aria-label="${esc(aria)}">${esc(short)} <span class="dn">${n}</span></button>`;
+    box.setAttribute("aria-label", "Filter by day");
+    box.innerHTML = chip("", "All days", `All days, ${all.length} matches`, all.length)
+      + DAYS.map(d => { const n = per.get(d.sort) || 0, l = dayChipLabel(d, n); return chip(d.sort, l.short, l.aria, n); }).join("")
+      + (per.get("tba") ? chip("tba", "Time TBA", `Time not yet published, ${per.get("tba")} sessions`, per.get("tba")) : "");
+    return;
+  }
   if (state.view === "days" && DAYS.length) {
     box.setAttribute("aria-label", "Choose day");
     box.innerHTML = DAYS.map(d => {
-      const [, m, dd] = d.date.split("-").map(Number);
-      const n = dayRows(d.sort).length;
+      const n = dayRows(d.sort).length, l = dayChipLabel(d, n);
       return `<button class="chip day" data-day="${d.sort}" aria-pressed="${state.day === d.sort}"
-        aria-label="${esc(d.name)} ${MON[m-1]} ${dd}, ${n} session${n===1?"":"s"}">${esc(d.name.slice(0,3))} ${MON[m-1]} ${dd} <span class="dn">${n}</span></button>`;
+        aria-label="${esc(l.aria)}">${esc(l.short)} <span class="dn">${n}</span></button>`;
     }).join("");
   } else {
     box.setAttribute("aria-label", "Filter by track");
@@ -1314,7 +1333,7 @@ function render() {
     [String(plan.size), "planned"],
     [String(nPeople), nPeople === 1 ? "attendee" : "attendees"],
   ].map(([b,s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("");
-  const shown = state.view === "foryou" ? ranked.filter(x => matches(x.r)).length
+  const shown = state.view === "foryou" ? fyVisible().length
               : state.view === "tracks" ? CURATED.filter(matches).length : null;
   $("#count").innerHTML = (shown !== null ? `<b>${shown}</b> shown &middot; ` : "")
     + `<b>${plan.size}</b> planned` + (META.scheduled ? ` &middot; <b>${META.scheduled}</b> scheduled` : "");
@@ -1484,6 +1503,14 @@ $("#miscChips").addEventListener("click", onFilterChip);
 $("#cmpChips").addEventListener("click", onFilterChip);
 $("#trackChips").addEventListener("click", e => {
   const b = e.target.closest(".chip"); if (!b) return;
+  if (b.dataset.fyday !== undefined) {
+    // Clicking the selected day again goes back to all days.
+    const k = b.dataset.fyday || null;
+    state.fyDay = state.fyDay === k ? null : k; render();
+    const top = out.getBoundingClientRect().top + window.scrollY - ($(".rail").offsetHeight || 0) - 8;
+    if (window.scrollY > top) window.scrollTo(0, Math.max(0, top));
+    return;
+  }
   if (b.dataset.day) {
     state.day = b.dataset.day; render();
     // Jump back to the top of the day if you'd scrolled down the previous one.
@@ -1532,7 +1559,7 @@ $("#startOver").addEventListener("click", async () => {
   openWizard(false);
 });
 $("#reset").addEventListener("click", () => {
-  state.q = ""; state.tracks.clear(); state.f.clear(); $("#q").value = "";
+  state.q = ""; state.tracks.clear(); state.f.clear(); state.fyDay = null; $("#q").value = "";
   document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed","false"));
   render();
 });

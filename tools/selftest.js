@@ -221,6 +221,70 @@
     goView("foryou");
   });
 
+  /* ---------- For you: the chip row filters by day ---------- */
+  const fyChips = () => [...document.querySelectorAll("#trackChips .chip.day[data-fyday]")];
+  const pressed = () => fyChips().filter(b => b.getAttribute("aria-pressed") === "true").map(b => b.dataset.fyday);
+  const fyProfile = {tp: ["Artificial Intelligence"], ai: [], ro: [], in: [], levels: ["300", "400"], fmt: [], hands: true};
+  await t("For you: topic chips become All days + one chip per day", () => {
+    reset(); profile = fyProfile; rank(); state.fyDay = null; goView("foryou");
+    const chips = fyChips();
+    ok(chips.length >= DAYS.length + 1, `chips: ${chips.length}`);
+    eq(chips[0].textContent.replace(/\s+/g, " ").trim().replace(/ \d+$/, ""), "All days");
+    eq(document.querySelectorAll("#trackChips .chip.t").length, 0, "topic chips still shown");
+    eq(pressed(), [""], "All days pressed by default");
+  });
+  await t("For you: day counts add up to All days", () => {
+    const n = b => Number(b.querySelector(".dn").textContent);
+    const [all, ...days] = fyChips();
+    eq(days.reduce((a, b) => a + n(b), 0), n(all), "sum");
+    eq(n(all), fyMatches().length, "All = matches");
+  });
+  await t("For you: picking a day shows only that day, top 60 drawn from it", async () => {
+    const tue = DAYS[1].sort;
+    fyChips().find(b => b.dataset.fyday === tue).click(); await tick();
+    eq(pressed(), [tue], "pressed");
+    const tiles = [...document.querySelectorAll("#out .tile")];
+    ok(tiles.length > 0, "no tiles");
+    ok(tiles.every(el => dayOf(SESS.get(el.dataset.code)) === tue), "a tile from another day");
+    eq(tiles.length, Math.min(60, fyMatches().filter(x => dayOf(x.r) === tue).length), "count");
+    eq(document.querySelectorAll("#out .dayhead").length, 1, "one day section");
+    eq(Number($("#count b").textContent), fyVisible().length, "rail count");
+  });
+  await t("For you: clicking the day again (or All days) returns to every day", async () => {
+    const tue = DAYS[1].sort;
+    fyChips().find(b => b.dataset.fyday === tue).click(); await tick();
+    eq(pressed(), [""], "toggle off");
+    fyChips().find(b => b.dataset.fyday === DAYS[3].sort).click(); await tick();
+    fyChips()[0].click(); await tick();
+    eq(pressed(), [""], "All days"); eq(state.fyDay, null);
+    ok(document.querySelectorAll("#out .dayhead").length > 1, "not grouped by day again");
+  });
+  await t("For you: a session is filed under the showing you chose", () => {
+    plan = new Set([R2.c]); chosen = {[R2.c]: k2};
+    eq(dayOf(R2), R2.s[1].daySort); chosen = {}; eq(dayOf(R2), R2.s[0].daySort); plan = new Set();
+  });
+  await t("For you: topic filters are kept but not applied; Curated keeps them", async () => {
+    goView("tracks");
+    document.querySelector("#trackChips .chip.t").click(); await tick();
+    const tr = [...state.tracks][0];
+    goView("foryou");
+    eq(fyChips().length > 0, true, "day chips");
+    ok(fyMatches().some(x => !(x.r.pick && x.r.pick.track === tr)), "For you still filtered by topic");
+    goView("tracks");
+    eq(document.querySelector(`#trackChips [data-t="${tr}"]`).getAttribute("aria-pressed"), "true");
+    $("#reset").click(); await tick();
+  });
+  await t("Clear resets the For you day to All days", async () => {
+    goView("foryou");
+    fyChips().find(b => b.dataset.fyday === DAYS[0].sort).click(); await tick();
+    $("#reset").click(); await tick();
+    eq(state.fyDay, null); eq(pressed(), [""]);
+  });
+  await t("For you without survey answers keeps the topic chips", () => {
+    profile = null; state.fyDay = null; goView("foryou");
+    eq(fyChips().length, 0); ok(document.querySelectorAll("#trackChips .chip.t").length > 0);
+  });
+
   /* ---------- regressions: earlier features ---------- */
   await t("Start over clears plan, answers and comparisons", async () => {
     plan = new Set([A.c]); savePlan(); profile = {tp: [], ai: [], ro: [], in: [], levels: ["300"], fmt: [], hands: true};
