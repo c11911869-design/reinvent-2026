@@ -176,9 +176,12 @@ def main():
     DATA.mkdir(exist_ok=True)
     if args.offline:
         catalog = json.loads((DATA / "catalog.json").read_text())
-        recs_n = json.loads((DATA / "meta.json").read_text()).get("catalogTotal", len(catalog))
+        cached = json.loads((DATA / "meta.json").read_text())
+        recs_n = cached.get("catalogTotal", len(catalog))
+        pulled = cached.get("pulled")          # the cache is as old as its last fetch
         print(f"offline: {len(catalog)} sessions from cache")
     else:
+        pulled = None
         print("fetching catalog…")
         recs = fetch_all()
         recs_n = len(recs)
@@ -199,7 +202,7 @@ def main():
     scheduled = [r for r in catalog if r["s"]]
     days = sorted({(s["daySort"], s["dayName"], s["date"])
                    for r in catalog for s in r["s"]})
-    meta = {"pulled": time.strftime("%Y-%m-%d"), "catalogTotal": recs_n,
+    meta = {"pulled": pulled or time.strftime("%Y-%m-%d"), "catalogTotal": recs_n,
             "sessions": len(catalog), "picks": len(picks),
             "scheduled": len(scheduled),
             "days": [{"sort": d[0], "name": d[1], "date": d[2]} for d in days],
